@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { logout } from "@/store/slices/authSlice";
@@ -20,7 +20,7 @@ import {
   useSyncAllMutation,
   type Lesson,
 } from "@/store/api/attendanceApi";
-import { useCohorts } from "@/store/api/cohortsApi";
+import { useGetCohortsQuery } from "@/store/api/cohortsApi";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -83,6 +83,8 @@ const Attendance = () => {
   const [sortState, setSortState] = useState<{ lessonId: string; order: 'asc' | 'desc' } | null>(null);
   const [deleteLessonModalOpen, setDeleteLessonModalOpen] = useState(false);
   const [lessonToDelete, setLessonToDelete] = useState<{ id: string; date: string } | null>(null);
+  const [cohortFilterRefreshKey, setCohortFilterRefreshKey] = useState(0);
+  const justSyncedRef = useRef(false);
 
   // Local state for pending attendance changes
   const [pendingAttendanceChanges, setPendingAttendanceChanges] = useState<
@@ -106,7 +108,13 @@ const Attendance = () => {
     { skip: lessonIds.length === 0 }
   );
 
-  const { cohorts, isLoading: cohortsLoading } = useCohorts();
+  const { data: cohorts = [], isLoading: cohortsLoading, refetch: refetchCohorts } = useGetCohortsQuery();
+
+  // Use a ref to always have the latest cohorts for the search function
+  const cohortsRef = useRef(cohorts);
+  useEffect(() => {
+    cohortsRef.current = cohorts;
+  }, [cohorts]);
 
   const [createLesson, { isLoading: creatingLesson }] = useCreateLessonMutation();
   const [updateLesson] = useUpdateLessonMutation();
@@ -121,6 +129,15 @@ const Attendance = () => {
       return;
     }
   }, [isAuthenticated, navigate]);
+
+  // Refresh autocomplete filter when cohorts are updated after sync
+  useEffect(() => {
+    if (justSyncedRef.current && !cohortsLoading && cohorts.length > 0) {
+      // Cohorts have been updated after sync, refresh the filter to show updated results
+      setCohortFilterRefreshKey((prev) => prev + 1);
+      justSyncedRef.current = false;
+    }
+  }, [cohortsLoading, cohorts]);
 
   // Sync cohort filter value with selected cohort (no sync here - only when selected)
   useEffect(() => {
@@ -390,16 +407,17 @@ const Attendance = () => {
       : cohort.name;
   };
 
-  // Cohort filter search function
+  // Cohort filter search function - uses ref to always get latest cohorts
   const cohortSearchFn = async (searchTerm: string): Promise<string[]> => {
-    if (!cohorts || cohorts.length === 0) {
+    const currentCohorts = cohortsRef.current;
+    if (!currentCohorts || currentCohorts.length === 0) {
       return [];
     }
     if (!searchTerm) {
-      return cohorts.map((c) => getCohortDisplayName(c));
+      return currentCohorts.map((c) => getCohortDisplayName(c));
     }
     const searchLower = searchTerm.toLowerCase();
-    return cohorts
+    return currentCohorts
       .filter((c) => {
         const displayName = getCohortDisplayName(c);
         return displayName.toLowerCase().includes(searchLower);
@@ -470,6 +488,16 @@ const Attendance = () => {
         title: "הצלחה",
         description: result.message || `נסנכרנו ${result.cohortsSynced} מחזורים ו-${result.studentsSynced} תלמידים`,
       });
+      // Mark that we just synced
+      justSyncedRef.current = true;
+      // Explicitly refetch cohorts to ensure we have the latest data
+      const { data: updatedCohorts } = await refetchCohorts();
+      // Update the ref immediately with the fresh data
+      if (updatedCohorts) {
+        cohortsRef.current = updatedCohorts;
+      }
+      // Then refresh the autocomplete filter to show updated results
+      setCohortFilterRefreshKey((prev) => prev + 1);
     } catch (error: any) {
       console.error('Error syncing:', error);
       toast({
@@ -742,6 +770,7 @@ const Attendance = () => {
                     autoSearchOnFocus={true}
                     initialLoadOnMount={true}
                     initialResultsLimit={10}
+                    refreshKey={cohortFilterRefreshKey}
                   />
                   {selectedCohortId && cohortFilterValue && (
                     <p className="text-xs text-muted-foreground text-right" dir="rtl">

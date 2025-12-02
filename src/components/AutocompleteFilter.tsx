@@ -18,6 +18,7 @@ interface AutocompleteFilterProps {
     autoSearchOnFocus?: boolean // If true, trigger search on focus when value is empty
     initialLoadOnMount?: boolean
     initialResultsLimit?: number
+    refreshKey?: string | number // When this changes, clear cache and refetch
 }
 
 export function AutocompleteFilter({
@@ -32,6 +33,7 @@ export function AutocompleteFilter({
     autoSearchOnFocus = false,
     initialLoadOnMount = false,
     initialResultsLimit = 5,
+    refreshKey,
 }: AutocompleteFilterProps) {
     const [suggestions, setSuggestions] = useState<string[]>([])
     const [defaultSuggestions, setDefaultSuggestions] = useState<string[]>([])
@@ -57,6 +59,43 @@ export function AutocompleteFilter({
     useEffect(() => {
         latestSearchFnRef.current = searchFn
     }, [searchFn])
+
+    // Clear cache and refetch when refreshKey changes
+    useEffect(() => {
+        if (refreshKey !== undefined) {
+            console.log("🔄 [AutocompleteFilter] Refresh key changed, clearing cache and refetching")
+            // Clear all cached results
+            lastResultRef.current = null
+            setDefaultSuggestions([])
+            setSuggestions([])
+            setNoResultsFound(false)
+            
+            // If we have initialLoadOnMount enabled, trigger a refetch
+            if (initialLoadOnMount) {
+                const refetch = async () => {
+                    setIsSearching(true)
+                    try {
+                        const results = await latestSearchFnRef.current("")
+                        const limitedResults = initialResultsLimit > 0 ? results.slice(0, initialResultsLimit) : results
+                        setDefaultSuggestions(limitedResults)
+                        if (!trimmedValue) {
+                            setSuggestions(limitedResults)
+                            setNoResultsFound(limitedResults.length === 0)
+                        }
+                        lastResultRef.current = { term: "", resultCount: limitedResults.length }
+                    } catch (error) {
+                        console.error("❌ [AutocompleteFilter] Error refetching after refresh:", error)
+                        setDefaultSuggestions([])
+                        setNoResultsFound(false)
+                        lastResultRef.current = null
+                    } finally {
+                        setIsSearching(false)
+                    }
+                }
+                refetch()
+            }
+        }
+    }, [refreshKey, initialLoadOnMount, initialResultsLimit, trimmedValue])
 
     useEffect(() => {
         if (!initialLoadOnMount) {
