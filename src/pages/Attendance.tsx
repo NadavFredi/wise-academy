@@ -507,7 +507,7 @@ const Attendance = () => {
             {/* Cohort Selection */}
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-base">בחירת Cohort</CardTitle>
+                <CardTitle className="text-base">בחירת מחזור</CardTitle>
               </CardHeader>
               <CardContent>
                 <Select
