@@ -7,6 +7,46 @@ export interface Student {
   cohort_id: string;
 }
 
+interface FireberryQueryResponse {
+  success: boolean;
+  data: {
+    ObjectName: string;
+    SystemName: string;
+    PrimaryKey: string;
+    PrimaryField: string;
+    ObjectType: number;
+    PageNum: number;
+    SortBy: string;
+    SortBy_Desc: boolean;
+    IsLastPage: boolean;
+    Columns: Array<{
+      name: string;
+      fieldname: string;
+      systemfieldtypeid: string;
+      fieldobjecttype: number | null;
+      isprimaryfield: boolean;
+      isrequired: boolean;
+      isreadonly: boolean;
+      maxlength: number | null;
+    }>;
+    Data: Array<Record<string, any>>;
+  };
+  message: string;
+}
+
+interface FireberryQueryRequest {
+  page_size: number;
+  page_number?: number;
+  query?: string;
+  fields?: string;
+  objecttype: number | string;
+}
+
+// Get Supabase URL for edge functions
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'http://localhost:54321';
+const SUPABASE_FUNCTION_URL = `${supabaseUrl}/functions/v1/fireberry-proxy`;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0';
+
 export interface Lesson {
   id: string;
   lesson_date: string;
@@ -28,13 +68,51 @@ export const attendanceApi = createApi({
   endpoints: (builder) => ({
     getStudents: builder.query<Student[], string>({
       queryFn: async (cohortId) => {
-        const { data, error } = await supabase
-          .from('students')
-          .select('*')
-          .eq('cohort_id', cohortId)
-          .order('name');
-        if (error) throw error;
-        return { data: data || [] };
+        if (!cohortId) {
+          return { data: [] };
+        }
+
+        try {
+          const response = await fetch(SUPABASE_FUNCTION_URL, {
+            method: 'POST',
+            headers: {
+              'accept': 'application/json',
+              'content-type': 'application/json',
+              'apikey': supabaseAnonKey,
+              'Authorization': `Bearer ${supabaseAnonKey}`,
+            },
+            body: JSON.stringify({
+              query: `(pcfCohort = ${cohortId})`,
+              fields: "pcfFullName,pcfLeadObjId",
+              page_size: 500,
+              objecttype: "1002",
+            } as FireberryQueryRequest),
+          });
+
+          if (!response.ok) {
+            throw new Error(`Fireberry API error: ${response.status} ${response.statusText}`);
+          }
+
+          const fireberryResponse: FireberryQueryResponse = await response.json();
+
+          if (!fireberryResponse.success || !fireberryResponse.data?.Data) {
+            return { data: [] };
+          }
+
+          const students: Student[] = fireberryResponse.data.Data.map((item) => ({
+            id: item.pcfLeadObjId || '',
+            name: item.pcfFullName || '',
+            cohort_id: cohortId,
+          })).filter((student) => student.id && student.name);
+
+          // Sort by name
+          students.sort((a, b) => a.name.localeCompare(b.name, 'he'));
+
+          return { data: students };
+        } catch (error) {
+          console.error('Error fetching students from Fireberry:', error);
+          return { error: error as Error };
+        }
       },
       providesTags: ['Students'],
     }),

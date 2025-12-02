@@ -10,6 +10,12 @@ export interface Cohort {
   pcfCoursename: string;
 }
 
+export interface Student {
+  id: string;
+  name: string;
+  cohort_id: string;
+}
+
 interface FireberryQueryResponse {
   success: boolean;
   data: {
@@ -87,10 +93,38 @@ export const cohortsApi = createApi({
       },
       providesTags: ['Cohorts'],
     }),
+    getStudentsByCohort: builder.query<Student[], string>({
+      query: (cohortId) => ({
+        url: '',
+        method: 'POST',
+        headers: {
+          'accept': 'application/json',
+          'content-type': 'application/json',
+        },
+        body: {
+          page_size: 50,
+          page_number: 1,
+          query: `"(pcfCohort = ${cohortId})"`,
+          objecttype: 1002,
+        } as FireberryQueryRequest,
+      }),
+      transformResponse: (response: FireberryQueryResponse, meta, cohortId): Student[] => {
+        if (!response.success || !response.data?.Data) {
+          return [];
+        }
+
+        return response.data.Data.map((item) => ({
+          id: item.pcfLeadObjId || '',
+          name: item.pcfFullName || '',
+          cohort_id: cohortId,
+        })).filter((student) => student.id && student.name);
+      },
+      providesTags: ['Cohorts'],
+    }),
   }),
 });
 
-export const { useGetCohortsQuery } = cohortsApi;
+export const { useGetCohortsQuery, useGetStudentsByCohortQuery } = cohortsApi;
 
 // Custom hook for easier usage
 export const useCohorts = () => {
