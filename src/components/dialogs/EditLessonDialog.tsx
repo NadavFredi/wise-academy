@@ -22,26 +22,7 @@ export const EditLessonDialog = ({
 }: EditLessonDialogProps) => {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent 
-        className="sm:max-w-[500px]" 
-        dir="rtl"
-        onPointerDownOutside={(e) => {
-          // Prevent closing if clicking on calendar
-          const target = e.target as HTMLElement
-          const calendarContainer = document.querySelector('[data-calendar-container]')
-          if (calendarContainer && calendarContainer.contains(target)) {
-            e.preventDefault()
-          }
-        }}
-        onInteractOutside={(e) => {
-          // Prevent closing if clicking on calendar
-          const target = e.target as HTMLElement
-          const calendarContainer = document.querySelector('[data-calendar-container]')
-          if (calendarContainer && calendarContainer.contains(target)) {
-            e.preventDefault()
-          }
-        }}
-      >
+      <DialogContent className="sm:max-w-[500px]" dir="rtl">
         <DialogHeader>
           <DialogTitle>ערוך תאריך שיעור</DialogTitle>
           <DialogDescription>
