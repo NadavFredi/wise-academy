@@ -210,6 +210,39 @@ export const attendanceApi = createApi({
       },
       invalidatesTags: ['Attendance'],
     }),
+    bulkUpdateAttendance: builder.mutation<
+      AttendanceRecord[],
+      Array<{ lessonId: string; studentId: string; attended: boolean; note?: string }>
+    >({
+      queryFn: async (updates) => {
+        if (updates.length === 0) {
+          return { data: [] };
+        }
+
+        // Prepare data for upsert - convert to format expected by Supabase
+        const upsertData = updates.map(update => ({
+          lesson_id: update.lessonId,
+          student_id: update.studentId,
+          attended: update.attended,
+          note: update.note ?? null,
+          updated_at: new Date().toISOString(),
+        }));
+
+        // Use upsert with conflict resolution on lesson_id and student_id
+        // This will update existing records or insert new ones
+        const { data, error } = await supabase
+          .from('attendance')
+          .upsert(upsertData, {
+            onConflict: 'lesson_id,student_id',
+            ignoreDuplicates: false,
+          })
+          .select();
+
+        if (error) throw error;
+        return { data: data || [] };
+      },
+      invalidatesTags: ['Attendance'],
+    }),
   }),
 });
 
@@ -221,6 +254,7 @@ export const {
   useUpdateLessonMutation,
   useDeleteLessonMutation,
   useUpdateAttendanceMutation,
+  useBulkUpdateAttendanceMutation,
   useSyncAllMutation,
 } = attendanceApi;
 

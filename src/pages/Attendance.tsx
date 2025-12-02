@@ -16,6 +16,7 @@ import {
   useUpdateLessonMutation,
   useDeleteLessonMutation,
   useUpdateAttendanceMutation,
+  useBulkUpdateAttendanceMutation,
   useSyncAllMutation,
   type Lesson,
 } from "@/store/api/attendanceApi";
@@ -29,7 +30,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, LogOut, StickyNote, MessageSquare, MoreVertical, Edit, Trash2, RefreshCw } from "lucide-react";
+import { Plus, LogOut, StickyNote, MessageSquare, MoreVertical, Edit, Trash2, RefreshCw, Save } from "lucide-react";
 import { format, subMonths } from "date-fns";
 import { he } from "date-fns/locale/he";
 import { cn } from "@/lib/utils";
@@ -83,6 +84,11 @@ const Attendance = () => {
   const [deleteLessonModalOpen, setDeleteLessonModalOpen] = useState(false);
   const [lessonToDelete, setLessonToDelete] = useState<{ id: string; date: string } | null>(null);
 
+  // Local state for pending attendance changes
+  const [pendingAttendanceChanges, setPendingAttendanceChanges] = useState<
+    Record<string, { attended: boolean; note?: string }>
+  >({});
+
   // RTK Query hooks
   const { data: students = [], isLoading: studentsLoading } = useGetStudentsQuery(
     selectedCohortId || "",
@@ -106,6 +112,7 @@ const Attendance = () => {
   const [updateLesson] = useUpdateLessonMutation();
   const [deleteLesson] = useDeleteLessonMutation();
   const [updateAttendance] = useUpdateAttendanceMutation();
+  const [bulkUpdateAttendance, { isLoading: savingBulk }] = useBulkUpdateAttendanceMutation();
   const [syncAll, { isLoading: syncing }] = useSyncAllMutation();
 
   useEffect(() => {
@@ -127,8 +134,17 @@ const Attendance = () => {
     } else if (!selectedCohortId) {
       setCohortFilterValue("");
       setLocalCohortId(null);
+      // Clear pending changes when cohort is deselected
+      setPendingAttendanceChanges({});
     }
   }, [selectedCohortId, cohorts]);
+
+  // Clear pending changes when cohort changes
+  useEffect(() => {
+    if (localCohortId) {
+      setPendingAttendanceChanges({});
+    }
+  }, [localCohortId]);
 
   // Fetch local cohort ID if cohort is selected but local ID is missing (e.g., after page refresh)
   useEffect(() => {
@@ -167,18 +183,33 @@ const Attendance = () => {
     fetchLocalCohortId();
   }, [selectedCohortId, localCohortId]);
 
-  // Create attendance map
+  // Create attendance map, merging server data with pending changes
   const attendanceMap = useMemo(() => {
     const map: Record<string, { attended: boolean; note: string }> = {};
     attendanceRecords.forEach((record) => {
-      const key = `${record.lesson_id}-${record.student_id}`;
+      // Use :: as separator since UUIDs contain dashes
+      const key = `${record.lesson_id}::${record.student_id}`;
       map[key] = {
         attended: record.attended,
         note: record.note || "",
       };
     });
+
+    // Override with pending changes
+    Object.entries(pendingAttendanceChanges).forEach(([key, change]) => {
+      map[key] = {
+        attended: change.attended,
+        note: change.note || "",
+      };
+    });
+
     return map;
-  }, [attendanceRecords]);
+  }, [attendanceRecords, pendingAttendanceChanges]);
+
+  // Check if there are pending changes
+  const hasPendingChanges = useMemo(() => {
+    return Object.keys(pendingAttendanceChanges).length > 0;
+  }, [pendingAttendanceChanges]);
 
   // Filter lessons by date range and sort from earliest to latest
   const filteredLessons = useMemo(() => {
@@ -230,8 +261,9 @@ const Attendance = () => {
     if (!lesson) return filteredStudents;
 
     return [...filteredStudents].sort((a, b) => {
-      const keyA = `${lesson.id}-${a.id}`;
-      const keyB = `${lesson.id}-${b.id}`;
+      // Use :: as separator since UUIDs contain dashes
+      const keyA = `${lesson.id}::${a.id}`;
+      const keyB = `${lesson.id}::${b.id}`;
       const recordA = attendanceMap[keyA];
       const recordB = attendanceMap[keyB];
       const attendedA = recordA?.attended || false;
@@ -493,21 +525,51 @@ const Attendance = () => {
     }
   };
 
-  const handleAttendanceChange = async (
+  const handleAttendanceChange = (
     lessonId: string,
     studentId: string,
     attended: boolean
   ) => {
-    try {
-      await updateAttendance({
-        lessonId,
-        studentId,
+    // Use :: as separator since UUIDs contain dashes
+    const key = `${lessonId}::${studentId}`;
+    setPendingAttendanceChanges((prev) => ({
+      ...prev,
+      [key]: {
+        ...prev[key],
         attended,
-      }).unwrap();
+        // Preserve note if it exists
+        note: prev[key]?.note,
+      },
+    }));
+  };
+
+  const handleBulkSave = async () => {
+    if (!hasPendingChanges) return;
+
+    try {
+      const updates = Object.entries(pendingAttendanceChanges).map(([key, change]) => {
+        const [lessonId, studentId] = key.split('::');
+        return {
+          lessonId,
+          studentId,
+          attended: change.attended,
+          note: change.note,
+        };
+      });
+
+      await bulkUpdateAttendance(updates).unwrap();
+
+      // Clear pending changes after successful save
+      setPendingAttendanceChanges({});
+
+      toast({
+        title: "הצלחה",
+        description: `נשמרו ${updates.length} עדכוני נוכחות בהצלחה`,
+      });
     } catch (error) {
       toast({
         title: "שגיאה",
-        description: "אירעה שגיאה בעדכון הנוכחות",
+        description: "אירעה שגיאה בשמירת עדכוני הנוכחות",
         variant: "destructive",
       });
     }
@@ -519,7 +581,8 @@ const Attendance = () => {
     studentName: string,
     lessonDate: string
   ) => {
-    const key = `${lessonId}-${studentId}`;
+    // Use :: as separator since UUIDs contain dashes
+    const key = `${lessonId}::${studentId}`;
     const current = attendanceMap[key];
     setCurrentNoteData({
       lessonId,
@@ -532,34 +595,25 @@ const Attendance = () => {
     setNoteModalOpen(true);
   };
 
-  const handleSaveNote = async () => {
+  const handleSaveNote = () => {
     if (!currentNoteData) return;
 
-    try {
-      const key = `${currentNoteData.lessonId}-${currentNoteData.studentId}`;
-      const current = attendanceMap[key];
-      await updateAttendance({
-        lessonId: currentNoteData.lessonId,
-        studentId: currentNoteData.studentId,
+    // Use :: as separator since UUIDs contain dashes
+    const key = `${currentNoteData.lessonId}::${currentNoteData.studentId}`;
+    const current = attendanceMap[key];
+
+    // Update pending changes with the note
+    setPendingAttendanceChanges((prev) => ({
+      ...prev,
+      [key]: {
         attended: current?.attended || false,
         note: noteInput,
-      }).unwrap();
+      },
+    }));
 
-      toast({
-        title: "הצלחה",
-        description: "ההערה נשמרה בהצלחה",
-      });
-
-      setNoteModalOpen(false);
-      setCurrentNoteData(null);
-      setNoteInput("");
-    } catch (error) {
-      toast({
-        title: "שגיאה",
-        description: "אירעה שגיאה בשמירת ההערה",
-        variant: "destructive",
-      });
-    }
+    setNoteModalOpen(false);
+    setCurrentNoteData(null);
+    setNoteInput("");
   };
 
   const handleLogout = () => {
@@ -912,7 +966,8 @@ const Attendance = () => {
                                   <span className="text-sm">{student.name}</span>
                                 </td>
                                 {filteredLessons.map((lesson) => {
-                                  const key = `${lesson.id}-${student.id}`;
+                                  // Use :: as separator since UUIDs contain dashes
+                                  const key = `${lesson.id}::${student.id}`;
                                   const record = attendanceMap[key];
                                   const attended = record?.attended || false;
                                   const note = record?.note || "";
@@ -1288,6 +1343,23 @@ const Attendance = () => {
             </TabsContent>
           </Tabs>
         </div>
+
+        {/* Floating Save Button */}
+        {hasPendingChanges && (
+          <div className="sticky bottom-0 left-0 right-0 z-50 pb-6 pt-4 bg-background/95 backdrop-blur-sm border-t mt-6">
+            <div className="w-full mx-auto px-6 max-w-[1920px]">
+              <Button
+                onClick={handleBulkSave}
+                disabled={savingBulk}
+                size="lg"
+                className="shadow-lg"
+              >
+                <Save className="ml-2 h-5 w-5" />
+                {savingBulk ? "שומר..." : `שמור שינויים (${Object.keys(pendingAttendanceChanges).length})`}
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
       <Footer />
 
