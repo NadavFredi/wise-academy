@@ -16,7 +16,7 @@ import {
   useUpdateLessonMutation,
   useDeleteLessonMutation,
   useUpdateAttendanceMutation,
-  useSyncCohortMutation,
+  useSyncAllMutation,
   type Lesson,
 } from "@/store/api/attendanceApi";
 import { useCohorts } from "@/store/api/cohortsApi";
@@ -29,7 +29,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, LogOut, StickyNote, MessageSquare, MoreVertical, Edit, Trash2 } from "lucide-react";
+import { Plus, LogOut, StickyNote, MessageSquare, MoreVertical, Edit, Trash2, RefreshCw } from "lucide-react";
 import { format, subMonths } from "date-fns";
 import { he } from "date-fns/locale/he";
 import { cn } from "@/lib/utils";
@@ -106,7 +106,7 @@ const Attendance = () => {
   const [updateLesson] = useUpdateLessonMutation();
   const [deleteLesson] = useDeleteLessonMutation();
   const [updateAttendance] = useUpdateAttendanceMutation();
-  const [syncCohort] = useSyncCohortMutation();
+  const [syncAll, { isLoading: syncing }] = useSyncAllMutation();
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -120,9 +120,8 @@ const Attendance = () => {
     if (selectedCohortId && cohorts.length > 0) {
       const selectedCohort = cohorts.find((c) => c.customobject1004id === selectedCohortId);
       if (selectedCohort) {
-        const displayName = selectedCohort.pcfCoursename
-          ? `${selectedCohort.name} - ${selectedCohort.pcfCoursename}`
-          : selectedCohort.name;
+        // Use getCohortDisplayName for consistency
+        const displayName = getCohortDisplayName(selectedCohort);
         setCohortFilterValue(displayName);
       }
     } else if (!selectedCohortId) {
@@ -133,31 +132,39 @@ const Attendance = () => {
 
   // Fetch local cohort ID if cohort is selected but local ID is missing (e.g., after page refresh)
   useEffect(() => {
-    if (selectedCohortId && !localCohortId) {
-      const fetchLocalCohortId = async () => {
-        try {
-          const { data, error } = await supabase
-            .from('cohorts')
-            .select('id')
-            .eq('fireberry_id', selectedCohortId)
-            .single();
+    // Only run if we have a selectedCohortId and don't have a localCohortId yet
+    if (!selectedCohortId || localCohortId) {
+      return;
+    }
 
-          if (error) {
-            // Cohort doesn't exist in local DB yet, will be synced when user selects it
-            console.log('Cohort not found in local DB, will sync on selection');
+    const fetchLocalCohortId = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('cohorts')
+          .select('id')
+          .eq('fireberry_id', selectedCohortId)
+          .maybeSingle(); // Use maybeSingle to avoid 406 error when not found
+
+        if (error) {
+          // Check if it's a "not found" error (PGRST116)
+          if (error.code === 'PGRST116') {
+            console.log('Cohort not found in local DB');
             return;
           }
-
-          if (data) {
-            setLocalCohortId(data.id);
-          }
-        } catch (error) {
+          // For other errors, log them
           console.error('Error fetching local cohort ID:', error);
+          return;
         }
-      };
 
-      fetchLocalCohortId();
-    }
+        if (data) {
+          setLocalCohortId(data.id);
+        }
+      } catch (error) {
+        console.error('Error fetching local cohort ID:', error);
+      }
+    };
+
+    fetchLocalCohortId();
   }, [selectedCohortId, localCohortId]);
 
   // Create attendance map
@@ -344,7 +351,8 @@ const Attendance = () => {
   };
 
   // Helper function to get cohort display name
-  const getCohortDisplayName = (cohort: { name: string; pcfCoursename: string }) => {
+  const getCohortDisplayName = (cohort: { name: string; pcfCoursename?: string }) => {
+    // If pcfCoursename exists (for compatibility), use it, otherwise just use name
     return cohort.pcfCoursename
       ? `${cohort.name} - ${cohort.pcfCoursename}`
       : cohort.name;
@@ -369,32 +377,74 @@ const Attendance = () => {
 
   const handleCohortSelect = async (cohortDisplayName: string) => {
     const cohort = cohorts.find((c) => getCohortDisplayName(c) === cohortDisplayName);
-    if (cohort) {
-      // Sync cohort to database first
-      const cohortName = cohort.pcfCoursename
-        ? `${cohort.name} - ${cohort.pcfCoursename}`
-        : cohort.name;
+    if (!cohort) {
+      return;
+    }
 
-      try {
-        const result = await syncCohort({
-          fireberryId: cohort.customobject1004id,
-          name: cohortName,
-        }).unwrap();
+    // Get the local cohort ID from Supabase
+    try {
+      const { data, error } = await supabase
+        .from('cohorts')
+        .select('id')
+        .eq('fireberry_id', cohort.customobject1004id)
+        .maybeSingle(); // Use maybeSingle to avoid 406 error when not found
 
-        // Store the local database cohort ID
-        setLocalCohortId(result.id);
-      } catch (error) {
-        console.error('Error syncing cohort:', error);
+      if (error) {
+        // Check if it's a "not found" error
+        if (error.code === 'PGRST116' || error.message?.includes('0 rows')) {
+          toast({
+            title: "שגיאה",
+            description: "מחזור לא נמצא במערכת. אנא בצע סנכרון תחילה.",
+            variant: "destructive",
+          });
+          return;
+        }
+        // For other errors
+        console.error('Error fetching cohort:', error);
         toast({
           title: "שגיאה",
-          description: "אירעה שגיאה בסנכרון המחזור",
+          description: "אירעה שגיאה בטעינת המחזור",
           variant: "destructive",
         });
         return;
       }
 
+      if (!data) {
+        toast({
+          title: "שגיאה",
+          description: "מחזור לא נמצא במערכת. אנא בצע סנכרון תחילה.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setLocalCohortId(data.id);
       dispatch(setSelectedCohort(cohort.customobject1004id));
       setCohortFilterValue(cohortDisplayName);
+    } catch (error) {
+      console.error('Error fetching cohort:', error);
+      toast({
+        title: "שגיאה",
+        description: "אירעה שגיאה בטעינת המחזור",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleSyncAll = async () => {
+    try {
+      const result = await syncAll().unwrap();
+      toast({
+        title: "הצלחה",
+        description: result.message || `נסנכרנו ${result.cohortsSynced} מחזורים ו-${result.studentsSynced} תלמידים`,
+      });
+    } catch (error: any) {
+      console.error('Error syncing:', error);
+      toast({
+        title: "שגיאה",
+        description: error.message || "אירעה שגיאה בסנכרון הנתונים",
+        variant: "destructive",
+      });
     }
   };
 
@@ -600,10 +650,20 @@ const Attendance = () => {
                 />
                 <h1 className="text-2xl font-bold">מערכת נוכחות</h1>
               </div>
-              <Button variant="outline" onClick={handleLogout}>
-                <LogOut className="ml-2 h-4 w-4" />
-                התנתק
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  onClick={handleSyncAll}
+                  disabled={syncing}
+                >
+                  <RefreshCw className={cn("ml-2 h-4 w-4", syncing && "animate-spin")} />
+                  {syncing ? "מסנכרן..." : "סנכרן מחזורים"}
+                </Button>
+                <Button variant="outline" onClick={handleLogout}>
+                  <LogOut className="ml-2 h-4 w-4" />
+                  התנתק
+                </Button>
+              </div>
             </div>
           </div>
         </div>

@@ -7,44 +7,9 @@ export interface Student {
   cohort_id: string;
 }
 
-interface FireberryQueryResponse {
-  success: boolean;
-  data: {
-    ObjectName: string;
-    SystemName: string;
-    PrimaryKey: string;
-    PrimaryField: string;
-    ObjectType: number;
-    PageNum: number;
-    SortBy: string;
-    SortBy_Desc: boolean;
-    IsLastPage: boolean;
-    Columns: Array<{
-      name: string;
-      fieldname: string;
-      systemfieldtypeid: string;
-      fieldobjecttype: number | null;
-      isprimaryfield: boolean;
-      isrequired: boolean;
-      isreadonly: boolean;
-      maxlength: number | null;
-    }>;
-    Data: Array<Record<string, any>>;
-  };
-  message: string;
-}
-
-interface FireberryQueryRequest {
-  page_size: number;
-  page_number?: number;
-  query?: string;
-  fields?: string;
-  objecttype: number | string;
-}
 
 // Get Supabase URL for edge functions
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'http://localhost:54321';
-const SUPABASE_FUNCTION_URL = `${supabaseUrl}/functions/v1/fireberry-proxy`;
 const SUPABASE_SYNC_FUNCTION_URL = `${supabaseUrl}/functions/v1/sync-fireberry`;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0';
 
@@ -67,11 +32,11 @@ export const attendanceApi = createApi({
   baseQuery: fetchBaseQuery({ baseUrl: '' }),
   tagTypes: ['Students', 'Lessons', 'Attendance'],
   endpoints: (builder) => ({
-    syncCohort: builder.mutation<
-      { id: string; fireberry_id: string; name: string },
-      { fireberryId: string; name: string }
+    syncAll: builder.mutation<
+      { cohortsSynced: number; studentsSynced: number; message: string },
+      void
     >({
-      queryFn: async ({ fireberryId, name }) => {
+      queryFn: async () => {
         try {
           const response = await fetch(SUPABASE_SYNC_FUNCTION_URL, {
             method: 'POST',
@@ -82,9 +47,7 @@ export const attendanceApi = createApi({
               'Authorization': `Bearer ${supabaseAnonKey}`,
             },
             body: JSON.stringify({
-              action: 'syncCohort',
-              cohortId: fireberryId,
-              cohortName: name,
+              action: 'syncAll',
             }),
           });
 
@@ -95,16 +58,16 @@ export const attendanceApi = createApi({
           const result = await response.json();
 
           if (!result.success) {
-            throw new Error(result.error || 'Failed to sync cohort');
+            throw new Error(result.error || 'Failed to sync data');
           }
 
           return { data: result.data };
         } catch (error) {
-          console.error('Error syncing cohort:', error);
+          console.error('Error syncing all data:', error);
           return { error: error as Error };
         }
       },
-      invalidatesTags: ['Students'],
+      invalidatesTags: ['Students', 'Cohorts'],
     }),
     getStudents: builder.query<Student[], string>({
       queryFn: async (cohortId) => {
@@ -113,32 +76,37 @@ export const attendanceApi = createApi({
         }
 
         try {
-          // Call sync function to fetch and sync students
-          const response = await fetch(SUPABASE_SYNC_FUNCTION_URL, {
-            method: 'POST',
-            headers: {
-              'accept': 'application/json',
-              'content-type': 'application/json',
-              'apikey': supabaseAnonKey,
-              'Authorization': `Bearer ${supabaseAnonKey}`,
-            },
-            body: JSON.stringify({
-              action: 'syncStudents',
-              cohortId: cohortId,
-            }),
-          });
+          // First, get the local cohort ID from fireberry_id
+          const { data: cohort, error: cohortError } = await supabase
+            .from('cohorts')
+            .select('id')
+            .eq('fireberry_id', cohortId)
+            .maybeSingle(); // Use maybeSingle to avoid 406 error when not found
 
-          if (!response.ok) {
-            throw new Error(`Sync function error: ${response.status} ${response.statusText}`);
+          if (cohortError) {
+            // Check if it's a "not found" error (PGRST116)
+            if (cohortError.code === 'PGRST116') {
+              return { data: [] };
+            }
+            // For other errors, log and return empty
+            console.error('Error fetching cohort:', cohortError);
+            return { data: [] };
           }
 
-          const result = await response.json();
-
-          if (!result.success) {
-            throw new Error(result.error || 'Failed to sync students');
+          if (!cohort) {
+            return { data: [] };
           }
 
-          return { data: result.data || [] };
+          // Fetch students from Supabase
+          const { data: students, error: studentsError } = await supabase
+            .from('students')
+            .select('id, name, cohort_id')
+            .eq('cohort_id', cohort.id)
+            .order('name', { ascending: true });
+
+          if (studentsError) throw studentsError;
+
+          return { data: students || [] };
         } catch (error) {
           console.error('Error fetching students:', error);
           return { error: error as Error };
@@ -253,6 +221,6 @@ export const {
   useUpdateLessonMutation,
   useDeleteLessonMutation,
   useUpdateAttendanceMutation,
-  useSyncCohortMutation,
+  useSyncAllMutation,
 } = attendanceApi;
 

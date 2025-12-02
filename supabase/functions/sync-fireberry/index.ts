@@ -26,6 +26,161 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
     const { action, cohortId, cohortName } = await req.json()
 
+    if (action === 'syncAll') {
+      // Fetch all cohorts from Fireberry
+      const cohortsResponse = await fetch(FIREBERRY_API_URL, {
+        method: 'POST',
+        headers: {
+          'accept': 'application/json',
+          'content-type': 'application/json',
+          'tokenid': FIREBERRY_TOKEN,
+        },
+        body: JSON.stringify({
+          query: "pcfShouldShowOnAttendanceSystem = 1",
+          page_size: 500,
+          objecttype: 1004,
+        }),
+      })
+
+      if (!cohortsResponse.ok) {
+        throw new Error(`Fireberry API error: ${cohortsResponse.status} ${cohortsResponse.statusText}`)
+      }
+
+      const cohortsFireberryResponse = await cohortsResponse.json()
+
+      if (!cohortsFireberryResponse.success || !cohortsFireberryResponse.data?.Data) {
+        return new Response(
+          JSON.stringify({ success: true, data: { cohortsSynced: 0, studentsSynced: 0 } }),
+          {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            status: 200,
+          },
+        )
+      }
+
+      const fireberryCohorts = cohortsFireberryResponse.data.Data.map((item: any) => ({
+        fireberry_id: item.customobject1004id || '',
+        name: item.name || '',
+        pcfCoursename: item.pcfCoursename || '',
+      })).filter((c: any) => c.fireberry_id && c.name)
+
+      let cohortsSynced = 0
+      let studentsSynced = 0
+
+      // Sync each cohort
+      for (const fireberryCohort of fireberryCohorts) {
+        const cohortName = fireberryCohort.pcfCoursename
+          ? `${fireberryCohort.name} - ${fireberryCohort.pcfCoursename}`
+          : fireberryCohort.name
+
+        // Check if cohort exists
+        const { data: existingCohort } = await supabase
+          .from('cohorts')
+          .select('id, fireberry_id, name')
+          .eq('fireberry_id', fireberryCohort.fireberry_id)
+          .single()
+
+        let cohortId: string
+
+        if (existingCohort) {
+          cohortId = existingCohort.id
+        } else {
+          // Create new cohort
+          const { data: newCohort, error: cohortError } = await supabase
+            .from('cohorts')
+            .insert({
+              fireberry_id: fireberryCohort.fireberry_id,
+              name: cohortName,
+            })
+            .select('id, fireberry_id, name')
+            .single()
+
+          if (cohortError) {
+            console.error(`Error creating cohort ${cohortName}:`, cohortError)
+            continue
+          }
+
+          cohortId = newCohort.id
+          cohortsSynced++
+        }
+
+        // Fetch students for this cohort from Fireberry
+        const studentsResponse = await fetch(FIREBERRY_API_URL, {
+          method: 'POST',
+          headers: {
+            'accept': 'application/json',
+            'content-type': 'application/json',
+            'tokenid': FIREBERRY_TOKEN,
+          },
+          body: JSON.stringify({
+            query: `(pcfCohort = ${fireberryCohort.fireberry_id})`,
+            fields: "pcfFullName,pcfLeadObjId",
+            page_size: 500,
+            objecttype: "1002",
+          }),
+        })
+
+        if (!studentsResponse.ok) {
+          console.error(`Error fetching students for cohort ${cohortName}:`, studentsResponse.statusText)
+          continue
+        }
+
+        const studentsFireberryResponse = await studentsResponse.json()
+
+        if (!studentsFireberryResponse.success || !studentsFireberryResponse.data?.Data) {
+          continue
+        }
+
+        const fireberryStudents = studentsFireberryResponse.data.Data.map((item: any) => ({
+          fireberry_id: item.pcfLeadObjId || '',
+          name: item.pcfFullName || '',
+        })).filter((s: any) => s.fireberry_id && s.name)
+
+        // Sync each student (additive only)
+        for (const fireberryStudent of fireberryStudents) {
+          // Check if student exists
+          const { data: existingStudent } = await supabase
+            .from('students')
+            .select('id, name, cohort_id, fireberry_id')
+            .eq('fireberry_id', fireberryStudent.fireberry_id)
+            .single()
+
+          if (!existingStudent) {
+            // Create new student
+            const { error: insertError } = await supabase
+              .from('students')
+              .insert({
+                fireberry_id: fireberryStudent.fireberry_id,
+                name: fireberryStudent.name,
+                cohort_id: cohortId,
+              })
+
+            if (insertError) {
+              console.error(`Error creating student ${fireberryStudent.name}:`, insertError)
+              continue
+            }
+
+            studentsSynced++
+          }
+        }
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            cohortsSynced,
+            studentsSynced,
+            message: `Synced ${cohortsSynced} cohorts and ${studentsSynced} students`,
+          },
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 200,
+        },
+      )
+    }
+
     if (action === 'syncCohort') {
       // Sync cohort to database
       const { data: existingCohort } = await supabase

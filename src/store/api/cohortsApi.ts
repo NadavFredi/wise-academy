@@ -1,12 +1,12 @@
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
-
-// Get Supabase URL for edge functions
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'http://localhost:54321';
-const SUPABASE_FUNCTION_URL = `${supabaseUrl}/functions/v1/fireberry-proxy`;
+import { supabase } from '@/lib/supabase';
 
 export interface Cohort {
-  customobject1004id: string;
+  id: string;
+  fireberry_id: string;
   name: string;
+  // For compatibility with existing code that uses customobject1004id
+  customobject1004id: string;
   pcfCoursename: string;
 }
 
@@ -16,108 +16,80 @@ export interface Student {
   cohort_id: string;
 }
 
-interface FireberryQueryResponse {
-  success: boolean;
-  data: {
-    ObjectName: string;
-    SystemName: string;
-    PrimaryKey: string;
-    PrimaryField: string;
-    ObjectType: number;
-    PageNum: number;
-    SortBy: string;
-    SortBy_Desc: boolean;
-    IsLastPage: boolean;
-    Columns: Array<{
-      name: string;
-      fieldname: string;
-      systemfieldtypeid: string;
-      fieldobjecttype: number | null;
-      isprimaryfield: boolean;
-      isrequired: boolean;
-      isreadonly: boolean;
-      maxlength: number | null;
-    }>;
-    Data: Array<Record<string, any>>;
-  };
-  message: string;
-}
-
-interface FireberryQueryRequest {
-  page_size: number;
-  page_number: number;
-  query?: string;
-  objecttype: number;
-}
-
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0';
-
 export const cohortsApi = createApi({
   reducerPath: 'cohortsApi',
-  baseQuery: fetchBaseQuery({
-    baseUrl: SUPABASE_FUNCTION_URL,
-    prepareHeaders: (headers) => {
-      // Add Supabase anon key for edge function authentication
-      headers.set('apikey', supabaseAnonKey);
-      headers.set('Authorization', `Bearer ${supabaseAnonKey}`);
-      return headers;
-    },
-  }),
+  baseQuery: fetchBaseQuery({ baseUrl: '' }),
   tagTypes: ['Cohorts'],
   endpoints: (builder) => ({
     getCohorts: builder.query<Cohort[], void>({
-      query: () => ({
-        url: '',
-        method: 'POST',
-        headers: {
-          'accept': 'application/json',
-          'content-type': 'application/json',
-        },
-        body: {
-          page_size: 50,
-          page_number: 1,
-          query: "pcfShouldShowOnAttendanceSystem = 1",
-          objecttype: 1004,
-        } as FireberryQueryRequest,
-      }),
-      transformResponse: (response: FireberryQueryResponse): Cohort[] => {
-        if (!response.success || !response.data?.Data) {
-          return [];
-        }
+      queryFn: async () => {
+        try {
+          const { data, error } = await supabase
+            .from('cohorts')
+            .select('id, fireberry_id, name')
+            .order('name', { ascending: true });
 
-        return response.data.Data.map((item) => ({
-          customobject1004id: item.customobject1004id || '',
-          name: item.name || '',
-          pcfCoursename: item.pcfCoursename || '',
-        })).filter((cohort) => cohort.name && cohort.customobject1004id);
+          if (error) throw error;
+
+          // Transform to match existing interface
+          const cohorts: Cohort[] = (data || []).map((cohort) => ({
+            id: cohort.id,
+            fireberry_id: cohort.fireberry_id,
+            name: cohort.name,
+            customobject1004id: cohort.fireberry_id, // For compatibility
+            pcfCoursename: '', // We don't store this separately, it's in the name
+          }));
+
+          return { data: cohorts };
+        } catch (error) {
+          console.error('Error fetching cohorts:', error);
+          return { error: error as Error };
+        }
       },
       providesTags: ['Cohorts'],
     }),
     getStudentsByCohort: builder.query<Student[], string>({
-      query: (cohortId) => ({
-        url: '',
-        method: 'POST',
-        headers: {
-          'accept': 'application/json',
-          'content-type': 'application/json',
-        },
-        body: {
-          page_size: 50,
-          page_number: 1,
-          query: `"(pcfCohort = ${cohortId})"`,
-          objecttype: 1002,
-        } as FireberryQueryRequest,
-      }),
-      transformResponse: (response: FireberryQueryResponse, meta, cohortId): Student[] => {
-        if (!response.success || !response.data?.Data) {
-          return [];
+      queryFn: async (cohortId) => {
+        if (!cohortId) {
+          return { data: [] };
         }
 
-        return response.data.Data.map((item) => ({
-          id: item.pcfLeadObjId || '',
-          name: item.pcfFullName || '',
-          cohort_id: cohortId,
-        })).filter((student) => student.id && student.name);
+        try {
+          // First, get the local cohort ID from fireberry_id
+          const { data: cohort, error: cohortError } = await supabase
+            .from('cohorts')
+            .select('id')
+            .eq('fireberry_id', cohortId)
+            .maybeSingle(); // Use maybeSingle to avoid 406 error when not found
+
+          if (cohortError) {
+            // Check if it's a "not found" error (PGRST116)
+            if (cohortError.code === 'PGRST116') {
+              return { data: [] };
+            }
+            // For other errors, log and return empty
+            console.error('Error fetching cohort:', cohortError);
+            return { data: [] };
+          }
+
+          if (!cohort) {
+            return { data: [] };
+          }
+
+          // Fetch students from Supabase
+          const { data: students, error: studentsError } = await supabase
+            .from('students')
+            .select('id, name, cohort_id')
+            .eq('cohort_id', cohort.id)
+            .order('name', { ascending: true });
+
+          if (studentsError) throw studentsError;
+
+          return { data: students || [] };
+        } catch (error) {
+          console.error('Error fetching students:', error);
+          return { error: error as Error };
+        }
       },
       providesTags: ['Cohorts'],
     }),
