@@ -907,7 +907,24 @@ const Attendance = () => {
                       <Label htmlFor="start-date" className="text-sm mb-1">מתאריך</Label>
                       <DatePickerInput
                         value={startDate}
-                        onChange={setStartDate}
+                        onChange={(newDate) => {
+                          setStartDate(newDate)
+                          // If new start date is after end date, clear end date
+                          if (newDate && endDate) {
+                            const newDateStart = new Date(newDate)
+                            newDateStart.setHours(0, 0, 0, 0)
+                            const endDateStart = new Date(endDate)
+                            endDateStart.setHours(0, 0, 0, 0)
+                            if (newDateStart > endDateStart) {
+                              setEndDate(null)
+                              toast({
+                                title: "הודעה",
+                                description: "תאריך ההתחלה שונה לאחר תאריך הסיום, תאריך הסיום נמחק",
+                              })
+                            }
+                          }
+                        }}
+                        maxDate={endDate || undefined}
                         wrapperClassName="w-full"
                       />
                     </div>
@@ -915,7 +932,25 @@ const Attendance = () => {
                       <Label htmlFor="end-date" className="text-sm mb-1">עד תאריך</Label>
                       <DatePickerInput
                         value={endDate}
-                        onChange={setEndDate}
+                        onChange={(newDate) => {
+                          // Only allow setting end date if it's after or equal to start date
+                          if (newDate && startDate) {
+                            const newDateStart = new Date(newDate)
+                            newDateStart.setHours(0, 0, 0, 0)
+                            const startDateStart = new Date(startDate)
+                            startDateStart.setHours(0, 0, 0, 0)
+                            if (newDateStart < startDateStart) {
+                              toast({
+                                title: "שגיאה",
+                                description: "תאריך הסיום לא יכול להיות לפני תאריך ההתחלה",
+                                variant: "destructive",
+                              })
+                              return // Don't allow setting end date before start date
+                            }
+                          }
+                          setEndDate(newDate)
+                        }}
+                        minDate={startDate || undefined}
                         wrapperClassName="w-full"
                       />
                     </div>

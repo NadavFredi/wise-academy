@@ -28,6 +28,8 @@ interface DatePickerInputProps
   autoOpenOnFocus?: boolean
   usePortal?: boolean
   autoOpen?: boolean
+  minDate?: Date
+  maxDate?: Date
 }
 
 const DEFAULT_DISPLAY_FORMAT = "dd/MM/yyyy"
@@ -91,6 +93,8 @@ export const DatePickerInput = forwardRef<HTMLInputElement, DatePickerInputProps
       autoOpenOnFocus = true,
       usePortal = true,
       autoOpen = false,
+      minDate,
+      maxDate,
       ...rest
     },
     ref,
@@ -224,6 +228,28 @@ export const DatePickerInput = forwardRef<HTMLInputElement, DatePickerInputProps
     const handleSelectDate = useCallback(
       (date: Date | undefined) => {
         if (!date) return
+
+        // Validate min/max date constraints
+        if (minDate) {
+          const minDateStart = new Date(minDate)
+          minDateStart.setHours(0, 0, 0, 0)
+          const dateStart = new Date(date)
+          dateStart.setHours(0, 0, 0, 0)
+          if (dateStart < minDateStart) {
+            return // Don't allow selection if before minDate
+          }
+        }
+
+        if (maxDate) {
+          const maxDateStart = new Date(maxDate)
+          maxDateStart.setHours(23, 59, 59, 999)
+          const dateStart = new Date(date)
+          dateStart.setHours(0, 0, 0, 0)
+          if (dateStart > maxDateStart) {
+            return // Don't allow selection if after maxDate
+          }
+        }
+
         onChange(date)
         setInputValue(format(date, displayFormat))
         setOpen(false)
@@ -236,7 +262,7 @@ export const DatePickerInput = forwardRef<HTMLInputElement, DatePickerInputProps
           inputRef.current?.focus()
         })
       },
-      [displayFormat, onChange],
+      [displayFormat, onChange, minDate, maxDate],
     )
 
     const handleSelectMonth = useCallback(
@@ -301,9 +327,37 @@ export const DatePickerInput = forwardRef<HTMLInputElement, DatePickerInputProps
         const parsed = parseInputDate(valueToParse)
 
         if (parsed && isValid(parsed)) {
-          onChange(parsed)
-          setInputValue(format(parsed, displayFormat))
-          setDraftValue(format(parsed, displayFormat))
+          // Validate min/max date constraints
+          let isValidDate = true
+          if (minDate) {
+            const minDateStart = new Date(minDate)
+            minDateStart.setHours(0, 0, 0, 0)
+            const parsedStart = new Date(parsed)
+            parsedStart.setHours(0, 0, 0, 0)
+            if (parsedStart < minDateStart) {
+              isValidDate = false
+            }
+          }
+
+          if (isValidDate && maxDate) {
+            const maxDateStart = new Date(maxDate)
+            maxDateStart.setHours(23, 59, 59, 999)
+            const parsedStart = new Date(parsed)
+            parsedStart.setHours(0, 0, 0, 0)
+            if (parsedStart > maxDateStart) {
+              isValidDate = false
+            }
+          }
+
+          if (isValidDate) {
+            onChange(parsed)
+            setInputValue(format(parsed, displayFormat))
+            setDraftValue(format(parsed, displayFormat))
+          } else {
+            // Date is outside allowed range - restore to last valid value
+            setInputValue(value ? format(value, displayFormat) : "")
+            setDraftValue(value ? format(value, displayFormat) : "")
+          }
         } else {
           // Invalid date - restore to last valid value
           setInputValue(value ? format(value, displayFormat) : "")
@@ -313,7 +367,7 @@ export const DatePickerInput = forwardRef<HTMLInputElement, DatePickerInputProps
         setOpen(false)
         setCalendarView("day")
       },
-      [displayFormat, inputValue, onChange, value, isTypingMode, draftValue],
+      [displayFormat, inputValue, onChange, value, isTypingMode, draftValue, minDate, maxDate],
     )
 
     const handleKeyDown = useCallback((event: React.KeyboardEvent<HTMLInputElement>) => {
@@ -537,6 +591,8 @@ export const DatePickerInput = forwardRef<HTMLInputElement, DatePickerInputProps
                     defaultMonth={calendarMonth}
                     locale={he}
                     initialFocus
+                    fromDate={minDate}
+                    toDate={maxDate}
                     classNames={{
                       caption: "hidden",
                     }}
