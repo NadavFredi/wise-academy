@@ -560,17 +560,24 @@ const Attendance = () => {
                 <CardTitle className="text-base">בחירת מחזור</CardTitle>
               </CardHeader>
               <CardContent>
-                <AutocompleteFilter
-                  value={cohortFilterValue}
-                  onChange={setCohortFilterValue}
-                  onSelect={handleCohortSelect}
-                  placeholder={cohortsLoading ? "טוען..." : "חפש מחזור..."}
-                  searchFn={cohortSearchFn}
-                  minSearchLength={0}
-                  autoSearchOnFocus={true}
-                  initialLoadOnMount={true}
-                  initialResultsLimit={10}
-                />
+                <div className="space-y-2">
+                  <AutocompleteFilter
+                    value={cohortFilterValue}
+                    onChange={setCohortFilterValue}
+                    onSelect={handleCohortSelect}
+                    placeholder={cohortsLoading ? "טוען..." : "חפש מחזור..."}
+                    searchFn={cohortSearchFn}
+                    minSearchLength={0}
+                    autoSearchOnFocus={true}
+                    initialLoadOnMount={true}
+                    initialResultsLimit={10}
+                  />
+                  {selectedCohortId && cohortFilterValue && (
+                    <p className="text-xs text-muted-foreground text-right" dir="rtl">
+                      {cohortFilterValue}
+                    </p>
+                  )}
+                </div>
               </CardContent>
             </Card>
 
