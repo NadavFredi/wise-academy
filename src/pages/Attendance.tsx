@@ -39,6 +39,7 @@ import { AutocompleteFilter } from "@/components/AutocompleteFilter";
 import Highcharts from "highcharts";
 import HighchartsReact from "highcharts-react-official";
 import wiseLogo from "@/assets/icons/wise-logo.webp";
+import { supabase } from "@/lib/supabase";
 
 const Attendance = () => {
   const navigate = useNavigate();
@@ -54,6 +55,7 @@ const Attendance = () => {
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
   const [studentFilterValue, setStudentFilterValue] = useState("");
   const [cohortFilterValue, setCohortFilterValue] = useState("");
+  const [localCohortId, setLocalCohortId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("data");
   const [chartDateModalOpen, setChartDateModalOpen] = useState(false);
   const [selectedChartDateData, setSelectedChartDateData] = useState<{
@@ -88,8 +90,8 @@ const Attendance = () => {
   );
 
   const { data: lessons = [], isLoading: lessonsLoading } = useGetLessonsQuery(
-    selectedCohortId || "",
-    { skip: !selectedCohortId }
+    localCohortId || "",
+    { skip: !localCohortId }
   );
 
   const lessonIds = useMemo(() => lessons.map((l) => l.id), [lessons]);
@@ -113,7 +115,7 @@ const Attendance = () => {
     }
   }, [isAuthenticated, navigate]);
 
-  // Sync cohort filter value with selected cohort and sync cohort to DB
+  // Sync cohort filter value with selected cohort (no sync here - only when selected)
   useEffect(() => {
     if (selectedCohortId && cohorts.length > 0) {
       const selectedCohort = cohorts.find((c) => c.customobject1004id === selectedCohortId);
@@ -122,23 +124,41 @@ const Attendance = () => {
           ? `${selectedCohort.name} - ${selectedCohort.pcfCoursename}`
           : selectedCohort.name;
         setCohortFilterValue(displayName);
-
-        // Sync cohort to database
-        const cohortName = selectedCohort.pcfCoursename
-          ? `${selectedCohort.name} - ${selectedCohort.pcfCoursename}`
-          : selectedCohort.name;
-
-        syncCohort({
-          fireberryId: selectedCohort.customobject1004id,
-          name: cohortName,
-        }).catch((error) => {
-          console.error('Error syncing cohort:', error);
-        });
       }
     } else if (!selectedCohortId) {
       setCohortFilterValue("");
+      setLocalCohortId(null);
     }
-  }, [selectedCohortId, cohorts, syncCohort]);
+  }, [selectedCohortId, cohorts]);
+
+  // Fetch local cohort ID if cohort is selected but local ID is missing (e.g., after page refresh)
+  useEffect(() => {
+    if (selectedCohortId && !localCohortId) {
+      const fetchLocalCohortId = async () => {
+        try {
+          const { data, error } = await supabase
+            .from('cohorts')
+            .select('id')
+            .eq('fireberry_id', selectedCohortId)
+            .single();
+
+          if (error) {
+            // Cohort doesn't exist in local DB yet, will be synced when user selects it
+            console.log('Cohort not found in local DB, will sync on selection');
+            return;
+          }
+
+          if (data) {
+            setLocalCohortId(data.id);
+          }
+        } catch (error) {
+          console.error('Error fetching local cohort ID:', error);
+        }
+      };
+
+      fetchLocalCohortId();
+    }
+  }, [selectedCohortId, localCohortId]);
 
   // Create attendance map
   const attendanceMap = useMemo(() => {
@@ -356,10 +376,13 @@ const Attendance = () => {
         : cohort.name;
 
       try {
-        await syncCohort({
+        const result = await syncCohort({
           fireberryId: cohort.customobject1004id,
           name: cohortName,
         }).unwrap();
+
+        // Store the local database cohort ID
+        setLocalCohortId(result.id);
       } catch (error) {
         console.error('Error syncing cohort:', error);
         toast({
@@ -367,6 +390,7 @@ const Attendance = () => {
           description: "אירעה שגיאה בסנכרון המחזור",
           variant: "destructive",
         });
+        return;
       }
 
       dispatch(setSelectedCohort(cohort.customobject1004id));
@@ -388,10 +412,10 @@ const Attendance = () => {
   };
 
   const handleCreateLesson = async () => {
-    if (!newLessonDate || !selectedCohortId) {
+    if (!newLessonDate || !localCohortId) {
       toast({
         title: "שגיאה",
-        description: "אנא בחר תאריך",
+        description: !localCohortId ? "אנא בחר מחזור" : "אנא בחר תאריך",
         variant: "destructive",
       });
       return;
@@ -400,7 +424,7 @@ const Attendance = () => {
     try {
       const dateString = format(newLessonDate, "yyyy-MM-dd");
       await createLesson({
-        cohortId: selectedCohortId,
+        cohortId: localCohortId,
         lessonDate: dateString,
       }).unwrap();
 
