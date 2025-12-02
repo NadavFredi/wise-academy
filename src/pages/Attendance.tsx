@@ -16,6 +16,7 @@ import {
   useUpdateLessonMutation,
   useDeleteLessonMutation,
   useUpdateAttendanceMutation,
+  type Lesson,
 } from "@/store/api/attendanceApi";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -623,13 +624,13 @@ const Attendance = () => {
                 </Card>
               ) : (
                 <Card>
-                  <CardHeader>
+                  <CardHeader className="text-right">
                     <CardTitle>נוכחות תלמידים</CardTitle>
                   </CardHeader>
-                  <CardContent className="p-0">
-                    <div className="overflow-x-auto">
+                  <CardContent >
+                    <div className="overflow-x-auto" dir="rtl">
                       <div className="max-h-[600px] overflow-y-auto">
-                        <table className="w-full border-collapse">
+                        <table className="w-full border-collapse" dir="rtl">
                           <thead className="sticky top-0 bg-background z-20">
                             <tr className="border-b bg-accent/30">
                               <th className="text-right p-2 font-semibold sticky right-0 bg-background z-30 border-r min-w-[100px]">
@@ -665,7 +666,7 @@ const Attendance = () => {
                                             <MoreVertical className="h-3 w-3" />
                                           </button>
                                         </DropdownMenuTrigger>
-                                        <DropdownMenuContent align="end" dir="rtl">
+                                        <DropdownMenuContent align="end">
                                           <DropdownMenuItem
                                             onClick={() => handleEditLesson(lesson)}
                                           >
