@@ -13,6 +13,8 @@ import {
   useGetLessonsQuery,
   useGetAttendanceQuery,
   useCreateLessonMutation,
+  useUpdateLessonMutation,
+  useDeleteLessonMutation,
   useUpdateAttendanceMutation,
 } from "@/store/api/attendanceApi";
 import { Button } from "@/components/ui/button";
@@ -22,13 +24,15 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, LogOut, StickyNote, MessageSquare } from "lucide-react";
+import { Plus, LogOut, StickyNote, MessageSquare, MoreVertical, Edit, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 import { he } from "date-fns/locale/he";
 import { cn } from "@/lib/utils";
 import Footer from "@/components/Footer";
 import { DatePickerInput } from "@/components/DatePickerInput";
+import wiseLogo from "@/assets/icons/wise-logo.webp";
 
 const Attendance = () => {
   const navigate = useNavigate();
@@ -50,6 +54,15 @@ const Attendance = () => {
     note: string;
   } | null>(null);
   const [noteInput, setNoteInput] = useState("");
+  const [editLessonModalOpen, setEditLessonModalOpen] = useState(false);
+  const [currentLessonToEdit, setCurrentLessonToEdit] = useState<{
+    id: string;
+    lessonDate: string;
+  } | null>(null);
+  const [editLessonDate, setEditLessonDate] = useState<Date | null>(null);
+  const [sortState, setSortState] = useState<{ lessonId: string; order: 'asc' | 'desc' } | null>(null);
+  const [deleteLessonModalOpen, setDeleteLessonModalOpen] = useState(false);
+  const [lessonToDelete, setLessonToDelete] = useState<{ id: string; date: string } | null>(null);
 
   // RTK Query hooks
   const { data: students = [], isLoading: studentsLoading } = useGetStudentsQuery(
@@ -69,6 +82,8 @@ const Attendance = () => {
   );
 
   const [createLesson, { isLoading: creatingLesson }] = useCreateLessonMutation();
+  const [updateLesson] = useUpdateLessonMutation();
+  const [deleteLesson] = useDeleteLessonMutation();
   const [updateAttendance] = useUpdateAttendanceMutation();
 
   useEffect(() => {
@@ -126,6 +141,46 @@ const Attendance = () => {
       return dateA - dateB;
     });
   }, [lessons, startDate, endDate]);
+
+  // Sort students by attendance status for selected date
+  const sortedStudents = useMemo(() => {
+    if (!sortState) return students;
+
+    const lesson = filteredLessons.find((l) => l.id === sortState.lessonId);
+    if (!lesson) return students;
+
+    return [...students].sort((a, b) => {
+      const keyA = `${lesson.id}-${a.id}`;
+      const keyB = `${lesson.id}-${b.id}`;
+      const recordA = attendanceMap[keyA];
+      const recordB = attendanceMap[keyB];
+      const attendedA = recordA?.attended || false;
+      const attendedB = recordB?.attended || false;
+
+      if (attendedA === attendedB) return 0;
+      
+      if (sortState.order === 'asc') {
+        // Ascending: attended first (true), then not attended (false)
+        return attendedA ? -1 : 1;
+      } else {
+        // Descending: not attended first (false), then attended (true)
+        return attendedA ? 1 : -1;
+      }
+    });
+  }, [students, sortState, filteredLessons, attendanceMap]);
+
+  const handleColumnClick = (lessonId: string) => {
+    if (!sortState || sortState.lessonId !== lessonId) {
+      // First click: ascending
+      setSortState({ lessonId, order: 'asc' });
+    } else if (sortState.order === 'asc') {
+      // Second click: descending
+      setSortState({ lessonId, order: 'desc' });
+    } else {
+      // Third click: no sort
+      setSortState(null);
+    }
+  };
 
   const handleCreateLesson = async () => {
     if (!newLessonDate || !selectedCohortId) {
@@ -238,6 +293,68 @@ const Attendance = () => {
     setEndDate(null);
   };
 
+  const handleEditLesson = (lesson: Lesson) => {
+    setCurrentLessonToEdit({
+      id: lesson.id,
+      lessonDate: lesson.lesson_date,
+    });
+    const lessonDate = new Date(lesson.lesson_date);
+    setEditLessonDate(lessonDate);
+    setEditLessonModalOpen(true);
+  };
+
+  const handleSaveEditLesson = async () => {
+    if (!currentLessonToEdit || !editLessonDate) return;
+
+    try {
+      const dateString = format(editLessonDate, "yyyy-MM-dd");
+      await updateLesson({
+        lessonId: currentLessonToEdit.id,
+        lessonDate: dateString,
+      }).unwrap();
+
+      toast({
+        title: "הצלחה",
+        description: "תאריך השיעור עודכן בהצלחה",
+      });
+
+      setEditLessonModalOpen(false);
+      setCurrentLessonToEdit(null);
+      setEditLessonDate(null);
+    } catch (error: any) {
+      toast({
+        title: "שגיאה",
+        description: error.message || "אירעה שגיאה בעדכון השיעור",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleDeleteLesson = (lessonId: string, lessonDate: string) => {
+    setLessonToDelete({ id: lessonId, date: lessonDate });
+    setDeleteLessonModalOpen(true);
+  };
+
+  const handleConfirmDeleteLesson = async () => {
+    if (!lessonToDelete) return;
+
+    try {
+      await deleteLesson(lessonToDelete.id).unwrap();
+      toast({
+        title: "הצלחה",
+        description: "השיעור נמחק בהצלחה",
+      });
+      setDeleteLessonModalOpen(false);
+      setLessonToDelete(null);
+    } catch (error: any) {
+      toast({
+        title: "שגיאה",
+        description: error.message || "אירעה שגיאה במחיקת השיעור",
+        variant: "destructive",
+      });
+    }
+  };
+
   const loading = studentsLoading || lessonsLoading || attendanceLoading;
 
   return (
@@ -246,7 +363,14 @@ const Attendance = () => {
         <div className="border-b bg-background/80 backdrop-blur-md">
           <div className="container mx-auto px-6 py-4">
             <div className="flex items-center justify-between">
-              <h1 className="text-2xl font-bold">מערכת נוכחות</h1>
+              <div className="flex items-center gap-4">
+                <img 
+                  src={wiseLogo} 
+                  alt="Wise Logo" 
+                  className="h-20 w-auto"
+                />
+                <h1 className="text-2xl font-bold">מערכת נוכחות</h1>
+              </div>
               <Button variant="outline" onClick={handleLogout}>
                 <LogOut className="ml-2 h-4 w-4" />
                 התנתק
@@ -369,18 +493,60 @@ const Attendance = () => {
                           <th className="text-right p-2 font-semibold sticky right-0 bg-background z-30 border-r min-w-[100px]">
                             תלמיד
                           </th>
-                          {filteredLessons.map((lesson) => (
+                        {filteredLessons.map((lesson) => {
+                          const isSorted = sortState?.lessonId === lesson.id;
+                          const sortOrder = isSorted ? sortState.order : null;
+                          
+                          return (
                             <th
                               key={lesson.id}
-                              className="text-center p-2 font-semibold min-w-[90px] whitespace-nowrap text-xs"
+                              className={cn(
+                                "text-center p-2 font-semibold min-w-[90px] whitespace-nowrap text-xs relative group cursor-pointer select-none",
+                                isSorted && "bg-accent/50"
+                              )}
+                              onClick={() => handleColumnClick(lesson.id)}
                             >
-                              {format(new Date(lesson.lesson_date), "dd/MM/yyyy", { locale: he })}
+                              <div className="flex items-center justify-center gap-1">
+                                <span>{format(new Date(lesson.lesson_date), "dd/MM/yyyy", { locale: he })}</span>
+                                {sortOrder && (
+                                  <span className="text-xs text-muted-foreground">
+                                    {sortOrder === 'asc' ? '↑' : '↓'}
+                                  </span>
+                                )}
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <button
+                                      type="button"
+                                      className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-accent rounded"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      <MoreVertical className="h-3 w-3" />
+                                    </button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end" dir="rtl">
+                                    <DropdownMenuItem
+                                      onClick={() => handleEditLesson(lesson)}
+                                    >
+                                      <Edit className="ml-2 h-4 w-4" />
+                                      ערוך
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onClick={() => handleDeleteLesson(lesson.id, lesson.lesson_date)}
+                                      className="text-destructive focus:text-destructive"
+                                    >
+                                      <Trash2 className="ml-2 h-4 w-4" />
+                                      מחק
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </div>
                             </th>
-                          ))}
+                          );
+                        })}
                         </tr>
                       </thead>
                       <tbody>
-                        {students.map((student) => (
+                        {sortedStudents.map((student) => (
                           <tr
                             key={student.id}
                             className="border-b hover:bg-accent/30 transition-colors"
@@ -474,6 +640,69 @@ const Attendance = () => {
             </Button>
             <Button onClick={handleSaveNote}>
               שמור
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Lesson Modal */}
+      <Dialog open={editLessonModalOpen} onOpenChange={setEditLessonModalOpen}>
+        <DialogContent className="sm:max-w-[500px]" dir="rtl">
+          <DialogHeader>
+            <DialogTitle>ערוך תאריך שיעור</DialogTitle>
+            <DialogDescription>
+              שנה את תאריך השיעור
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Label htmlFor="edit-lesson-date">תאריך השיעור</Label>
+            <DatePickerInput
+              id="edit-lesson-date"
+              value={editLessonDate}
+              onChange={setEditLessonDate}
+              wrapperClassName="mt-1"
+              autoOpenOnFocus={false}
+              autoOpen={editLessonModalOpen}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setEditLessonModalOpen(false);
+              setCurrentLessonToEdit(null);
+              setEditLessonDate(null);
+            }}>
+              ביטול
+            </Button>
+            <Button onClick={handleSaveEditLesson}>
+              שמור
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Lesson Modal */}
+      <Dialog open={deleteLessonModalOpen} onOpenChange={setDeleteLessonModalOpen}>
+        <DialogContent className="sm:max-w-[500px]" dir="rtl">
+          <DialogHeader>
+            <DialogTitle>מחיקת שיעור</DialogTitle>
+            <DialogDescription>
+              האם אתה בטוח שברצונך למחוק את השיעור מתאריך{" "}
+              {lessonToDelete && format(new Date(lessonToDelete.date), "dd/MM/yyyy", { locale: he })}?
+              <br />
+              <span className="text-destructive font-semibold mt-2 block">
+                פעולה זו תמחק גם את כל רשומות הנוכחות הקשורות לשיעור זה ולא ניתן לבטל אותה.
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setDeleteLessonModalOpen(false);
+              setLessonToDelete(null);
+            }}>
+              ביטול
+            </Button>
+            <Button variant="destructive" onClick={handleConfirmDeleteLesson}>
+              מחק
             </Button>
           </DialogFooter>
         </DialogContent>

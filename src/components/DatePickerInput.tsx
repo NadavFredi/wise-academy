@@ -27,6 +27,7 @@ interface DatePickerInputProps
   disabled?: boolean
   autoOpenOnFocus?: boolean
   usePortal?: boolean
+  autoOpen?: boolean
 }
 
 const DEFAULT_DISPLAY_FORMAT = "dd/MM/yyyy"
@@ -89,6 +90,7 @@ export const DatePickerInput = forwardRef<HTMLInputElement, DatePickerInputProps
       disabled = false,
       autoOpenOnFocus = true,
       usePortal = true,
+      autoOpen = false,
       ...rest
     },
     ref,
@@ -99,7 +101,7 @@ export const DatePickerInput = forwardRef<HTMLInputElement, DatePickerInputProps
     const suppressNextFocusRef = useRef(false)
     const isTypingRef = useRef(false)
     const lastPointerDownInsideRef = useRef(false)
-    const [open, setOpen] = useState(false)
+    const [open, setOpen] = useState(autoOpen)
     const [inputValue, setInputValue] = useState(() => (value ? format(value, displayFormat) : ""))
     const [calendarView, setCalendarView] = useState<CalendarView>("day")
     const [isTypingMode, setIsTypingMode] = useState(false)
@@ -154,6 +156,17 @@ export const DatePickerInput = forwardRef<HTMLInputElement, DatePickerInputProps
         lastPointerDownInsideRef.current = false
       }
     }, [open])
+
+    // Auto open if prop is set
+    useEffect(() => {
+      if (autoOpen && !disabled && !open) {
+        // Small delay to ensure modal is fully rendered
+        const timer = setTimeout(() => {
+          setOpen(true)
+        }, 150)
+        return () => clearTimeout(timer)
+      }
+    }, [autoOpen, disabled, open])
 
     const updatePortalPosition = useCallback(() => {
       if (!usePortal || !open) return

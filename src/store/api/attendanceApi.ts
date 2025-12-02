@@ -74,6 +74,30 @@ export const attendanceApi = createApi({
       },
       invalidatesTags: ['Lessons'],
     }),
+    updateLesson: builder.mutation<Lesson, { lessonId: string; lessonDate: string }>({
+      queryFn: async ({ lessonId, lessonDate }) => {
+        const { data, error } = await supabase
+          .from('lessons')
+          .update({ lesson_date: lessonDate })
+          .eq('id', lessonId)
+          .select()
+          .single();
+        if (error) throw error;
+        return { data };
+      },
+      invalidatesTags: ['Lessons', 'Attendance'],
+    }),
+    deleteLesson: builder.mutation<void, string>({
+      queryFn: async (lessonId) => {
+        const { error } = await supabase
+          .from('lessons')
+          .delete()
+          .eq('id', lessonId);
+        if (error) throw error;
+        return { data: undefined };
+      },
+      invalidatesTags: ['Lessons', 'Attendance'],
+    }),
     updateAttendance: builder.mutation<
       AttendanceRecord,
       { lessonId: string; studentId: string; attended: boolean; note?: string }
@@ -118,6 +142,8 @@ export const {
   useGetLessonsQuery,
   useGetAttendanceQuery,
   useCreateLessonMutation,
+  useUpdateLessonMutation,
+  useDeleteLessonMutation,
   useUpdateAttendanceMutation,
 } = attendanceApi;
 
