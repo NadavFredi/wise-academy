@@ -25,6 +25,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, LogOut, StickyNote, MessageSquare, MoreVertical, Edit, Trash2 } from "lucide-react";
 import { format } from "date-fns";
@@ -32,6 +33,9 @@ import { he } from "date-fns/locale/he";
 import { cn } from "@/lib/utils";
 import Footer from "@/components/Footer";
 import { DatePickerInput } from "@/components/DatePickerInput";
+import { AutocompleteFilter } from "@/components/AutocompleteFilter";
+import Highcharts from "highcharts";
+import HighchartsReact from "highcharts-react-official";
 import wiseLogo from "@/assets/icons/wise-logo.webp";
 
 const Attendance = () => {
@@ -45,6 +49,14 @@ const Attendance = () => {
   const [newLessonDate, setNewLessonDate] = useState<Date | null>(new Date());
   const [startDate, setStartDate] = useState<Date | null>(null);
   const [endDate, setEndDate] = useState<Date | null>(null);
+  const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
+  const [studentFilterValue, setStudentFilterValue] = useState("");
+  const [activeTab, setActiveTab] = useState("data");
+  const [chartDateModalOpen, setChartDateModalOpen] = useState(false);
+  const [selectedChartDateData, setSelectedChartDateData] = useState<{
+    date: string;
+    lessonId: string;
+  } | null>(null);
   const [noteModalOpen, setNoteModalOpen] = useState(false);
   const [currentNoteData, setCurrentNoteData] = useState<{
     lessonId: string;
@@ -142,14 +154,20 @@ const Attendance = () => {
     });
   }, [lessons, startDate, endDate]);
 
+  // Filter students by selected student IDs
+  const filteredStudents = useMemo(() => {
+    if (selectedStudentIds.length === 0) return students;
+    return students.filter((student) => selectedStudentIds.includes(student.id));
+  }, [students, selectedStudentIds]);
+
   // Sort students by attendance status for selected date
   const sortedStudents = useMemo(() => {
-    if (!sortState) return students;
+    if (!sortState) return filteredStudents;
 
     const lesson = filteredLessons.find((l) => l.id === sortState.lessonId);
-    if (!lesson) return students;
+    if (!lesson) return filteredStudents;
 
-    return [...students].sort((a, b) => {
+    return [...filteredStudents].sort((a, b) => {
       const keyA = `${lesson.id}-${a.id}`;
       const keyB = `${lesson.id}-${b.id}`;
       const recordA = attendanceMap[keyA];
@@ -167,7 +185,70 @@ const Attendance = () => {
         return attendedA ? 1 : -1;
       }
     });
-  }, [students, sortState, filteredLessons, attendanceMap]);
+  }, [filteredStudents, sortState, filteredLessons, attendanceMap]);
+
+  // Prepare chart data
+  const chartData = useMemo(() => {
+    const dates = filteredLessons.map((lesson) => format(new Date(lesson.lesson_date), "dd/MM/yyyy", { locale: he }));
+    const attendedData: number[] = [];
+    const absentData: number[] = [];
+
+    filteredLessons.forEach((lesson) => {
+      // Get students to count (filtered or all)
+      const studentsToCount = selectedStudentIds.length > 0
+        ? filteredStudents
+        : students;
+
+      let attended = 0;
+      let absent = 0;
+
+      studentsToCount.forEach((student) => {
+        const attendanceRecord = attendanceRecords.find(
+          (record) => record.lesson_id === lesson.id && record.student_id === student.id
+        );
+
+        if (attendanceRecord) {
+          // If there's a record, check if attended
+          if (attendanceRecord.attended) {
+            attended++;
+          } else {
+            absent++;
+          }
+        } else {
+          // If no record exists, student is absent (missing)
+          absent++;
+        }
+      });
+
+      attendedData.push(attended);
+      absentData.push(absent);
+    });
+
+    return { dates, attendedData, absentData };
+  }, [filteredLessons, attendanceRecords, selectedStudentIds, filteredStudents, students]);
+
+  // Student filter search function
+  const studentSearchFn = async (searchTerm: string): Promise<string[]> => {
+    if (!searchTerm) {
+      return students.map((s) => s.name);
+    }
+    const searchLower = searchTerm.toLowerCase();
+    return students
+      .filter((s) => s.name.toLowerCase().includes(searchLower))
+      .map((s) => s.name);
+  };
+
+  const handleStudentSelect = (studentName: string) => {
+    const student = students.find((s) => s.name === studentName);
+    if (student && !selectedStudentIds.includes(student.id)) {
+      setSelectedStudentIds([...selectedStudentIds, student.id]);
+      setStudentFilterValue("");
+    }
+  };
+
+  const handleRemoveStudent = (studentId: string) => {
+    setSelectedStudentIds(selectedStudentIds.filter((id) => id !== studentId));
+  };
 
   const handleColumnClick = (lessonId: string) => {
     if (!sortState || sortState.lessonId !== lessonId) {
@@ -380,8 +461,8 @@ const Attendance = () => {
         </div>
 
         <div className="container mx-auto px-6 py-6">
-          {/* Three Cards in One Row */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          {/* Four Cards in One Row */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
             {/* Cohort Selection */}
             <Card>
               <CardHeader className="pb-3">
@@ -468,18 +549,78 @@ const Attendance = () => {
                 </div>
               </CardContent>
             </Card>
-          </div>
 
-          {/* Attendance Table */}
-          {loading ? (
-            <div className="text-center py-12">טוען...</div>
-          ) : filteredLessons.length === 0 ? (
+            {/* Student Filter */}
             <Card>
-              <CardContent className="py-12 text-center text-muted-foreground">
-                אין שיעורים להצגה. צור שיעור חדש כדי להתחיל.
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">סינון תלמידים</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  <AutocompleteFilter
+                    value={studentFilterValue}
+                    onChange={setStudentFilterValue}
+                    onSelect={handleStudentSelect}
+                    placeholder="חפש תלמיד..."
+                    searchFn={studentSearchFn}
+                    minSearchLength={0}
+                    autoSearchOnFocus={true}
+                    initialLoadOnMount={true}
+                    initialResultsLimit={10}
+                  />
+                  {selectedStudentIds.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {selectedStudentIds.map((studentId) => {
+                        const student = students.find((s) => s.id === studentId);
+                        return student ? (
+                          <div
+                            key={studentId}
+                            className="flex items-center gap-1 px-2 py-1 bg-primary/10 text-primary rounded-md text-xs"
+                          >
+                            <span>{student.name}</span>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveStudent(studentId)}
+                              className="hover:text-destructive"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ) : null;
+                      })}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setSelectedStudentIds([])}
+                        className="text-xs h-7"
+                      >
+                        נקה הכל
+                      </Button>
+                    </div>
+                  )}
+                </div>
               </CardContent>
             </Card>
-          ) : (
+          </div>
+
+          {/* Tabs */}
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <TabsList className="mb-4">
+              <TabsTrigger value="data">נתונים</TabsTrigger>
+              <TabsTrigger value="graphs">גרפים</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="data">
+              {/* Attendance Table */}
+              {loading ? (
+                <div className="text-center py-12">טוען...</div>
+              ) : filteredLessons.length === 0 ? (
+                <Card>
+                  <CardContent className="py-12 text-center text-muted-foreground">
+                    אין שיעורים להצגה. צור שיעור חדש כדי להתחיל.
+                  </CardContent>
+                </Card>
+              ) : (
             <Card>
               <CardHeader>
                 <CardTitle>נוכחות תלמידים</CardTitle>
@@ -611,7 +752,149 @@ const Attendance = () => {
                 </div>
               </CardContent>
             </Card>
-          )}
+              )}
+            </TabsContent>
+
+            <TabsContent value="graphs">
+              {loading ? (
+                <div className="text-center py-12">טוען...</div>
+              ) : filteredLessons.length === 0 ? (
+                <Card>
+                  <CardContent className="py-12 text-center text-muted-foreground">
+                    אין שיעורים להצגה. צור שיעור חדש כדי להתחיל.
+                  </CardContent>
+                </Card>
+              ) : (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>גרף נוכחות</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div dir="rtl">
+                      <HighchartsReact
+                        highcharts={Highcharts}
+                        options={{
+                          chart: {
+                            type: "line",
+                          },
+                          title: {
+                            text: "נוכחות לפי תאריך",
+                            style: {
+                              fontFamily: "inherit",
+                            },
+                          },
+                          xAxis: {
+                            categories: chartData.dates,
+                            title: {
+                              text: "תאריך",
+                              style: {
+                                fontFamily: "inherit",
+                              },
+                            },
+                            labels: {
+                              style: {
+                                fontFamily: "inherit",
+                              },
+                            },
+                          },
+                          yAxis: {
+                            title: {
+                              text: "מספר תלמידים",
+                              style: {
+                                fontFamily: "inherit",
+                              },
+                            },
+                            labels: {
+                              style: {
+                                fontFamily: "inherit",
+                              },
+                            },
+                          },
+                          series: [
+                            {
+                              name: "נוכחים",
+                              data: chartData.attendedData,
+                              color: "#22c55e",
+                            },
+                            {
+                              name: "נעדרים",
+                              data: chartData.absentData,
+                              color: "#ef4444",
+                            },
+                          ],
+                          legend: {
+                            align: "right",
+                            verticalAlign: "top",
+                            itemStyle: {
+                              fontFamily: "inherit",
+                            },
+                          },
+                        plotOptions: {
+                          line: {
+                            dataLabels: {
+                              enabled: true,
+                            },
+                            enableMouseTracking: true,
+                          },
+                          series: {
+                            point: {
+                              events: {
+                                click: function (this: any) {
+                                  const dateIndex = this.x;
+                                  const lesson = filteredLessons[dateIndex];
+                                  if (lesson) {
+                                    setSelectedChartDateData({
+                                      date: lesson.lesson_date,
+                                      lessonId: lesson.id,
+                                    });
+                                    setChartDateModalOpen(true);
+                                  }
+                                },
+                              },
+                            },
+                          },
+                        },
+                        tooltip: {
+                          shared: true,
+                          useHTML: true,
+                          formatter: function (this: any) {
+                            const dateIndex = this.x;
+                            const lesson = filteredLessons[dateIndex];
+                            if (!lesson) return "";
+                            
+                            const date = format(new Date(lesson.lesson_date), "dd/MM/yyyy", { locale: he });
+                            let tooltip = `<div dir="rtl"><b>${date}</b><br/>`;
+                            
+                            this.points?.forEach((point: any) => {
+                              tooltip += `${point.series.name}: <b>${point.y}</b><br/>`;
+                            });
+                            
+                            tooltip += "</div>";
+                            return tooltip;
+                          },
+                        },
+                        lang: {
+                          loading: "טוען...",
+                          months: ["ינואר", "פברואר", "מרץ", "אפריל", "מאי", "יוני", "יולי", "אוגוסט", "ספטמבר", "אוקטובר", "נובמבר", "דצמבר"],
+                          weekdays: ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"],
+                          shortMonths: ["ינו", "פבר", "מרץ", "אפר", "מאי", "יונ", "יול", "אוג", "ספט", "אוק", "נוב", "דצמ"],
+                          rangeSelectorFrom: "מ",
+                          rangeSelectorTo: "עד",
+                          rangeSelectorZoom: "זום",
+                          downloadPNG: "הורד PNG",
+                          downloadJPEG: "הורד JPEG",
+                          downloadPDF: "הורד PDF",
+                          downloadSVG: "הורד SVG",
+                          printChart: "הדפס גרף",
+                        },
+                      }}
+                      />
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </TabsContent>
+          </Tabs>
         </div>
       </div>
       <Footer />
@@ -703,6 +986,107 @@ const Attendance = () => {
             </Button>
             <Button variant="destructive" onClick={handleConfirmDeleteLesson}>
               מחק
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Chart Date Details Modal */}
+      <Dialog open={chartDateModalOpen} onOpenChange={setChartDateModalOpen}>
+        <DialogContent className="sm:max-w-[600px]" dir="rtl">
+          <DialogHeader>
+            <DialogTitle>
+              פרטי נוכחות - {selectedChartDateData && format(new Date(selectedChartDateData.date), "dd/MM/yyyy", { locale: he })}
+            </DialogTitle>
+            <DialogDescription>
+              רשימת כל התלמידים והסטטוס שלהם בתאריך זה
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4 max-h-[400px] overflow-y-auto">
+            {selectedChartDateData && (() => {
+              const lesson = filteredLessons.find((l) => l.id === selectedChartDateData.lessonId);
+              if (!lesson) return null;
+
+              // Get students to count (filtered or all)
+              const studentsToCount = selectedStudentIds.length > 0
+                ? filteredStudents
+                : students;
+
+              const attendedList: Array<{ student: typeof students[0]; record?: typeof attendanceRecords[0] }> = [];
+              const absentList: Array<{ student: typeof students[0]; record?: typeof attendanceRecords[0] }> = [];
+
+              studentsToCount.forEach((student) => {
+                const attendanceRecord = attendanceRecords.find(
+                  (r) => r.lesson_id === lesson.id && r.student_id === student.id
+                );
+
+                if (attendanceRecord && attendanceRecord.attended) {
+                  // Student has record and attended
+                  attendedList.push({ student, record: attendanceRecord });
+                } else {
+                  // Student has no record or has record but didn't attend (missing)
+                  absentList.push({ student, record: attendanceRecord || undefined });
+                }
+              });
+
+              return (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="p-3 bg-green-50 rounded-md">
+                      <p className="text-sm font-semibold text-green-700">נוכחים</p>
+                      <p className="text-2xl font-bold text-green-700">{attendedList.length}</p>
+                    </div>
+                    <div className="p-3 bg-red-50 rounded-md">
+                      <p className="text-sm font-semibold text-red-700">נעדרים</p>
+                      <p className="text-2xl font-bold text-red-700">{absentList.length}</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div>
+                      <h4 className="text-sm font-semibold mb-2 text-green-700">נוכחים ({attendedList.length})</h4>
+                      <div className="space-y-1">
+                        {attendedList.map((item) => (
+                          <div key={item.student.id} className="flex items-center justify-between p-2 bg-green-50 rounded text-sm">
+                            <span>{item.student.name}</span>
+                            {item.record?.note && (
+                              <span className="text-xs text-muted-foreground">הערה: {item.record.note}</span>
+                            )}
+                          </div>
+                        ))}
+                        {attendedList.length === 0 && (
+                          <p className="text-sm text-muted-foreground">אין נוכחים</p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div>
+                      <h4 className="text-sm font-semibold mb-2 text-red-700">נעדרים ({absentList.length})</h4>
+                      <div className="space-y-1">
+                        {absentList.map((item) => (
+                          <div key={item.student.id} className="flex items-center justify-between p-2 bg-red-50 rounded text-sm">
+                            <span>{item.student.name}</span>
+                            {item.record?.note && (
+                              <span className="text-xs text-muted-foreground">הערה: {item.record.note}</span>
+                            )}
+                          </div>
+                        ))}
+                        {absentList.length === 0 && (
+                          <p className="text-sm text-muted-foreground">אין נעדרים</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setChartDateModalOpen(false);
+              setSelectedChartDateData(null);
+            }}>
+              סגור
             </Button>
           </DialogFooter>
         </DialogContent>

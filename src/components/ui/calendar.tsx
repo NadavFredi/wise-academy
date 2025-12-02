@@ -43,7 +43,7 @@ function CustomCaption(props: CustomCaptionProps) {
         aria-label="חודש קודם"
         className="rounded-full border border-slate-200 bg-white/80 p-1 text-slate-500 transition hover:bg-slate-100 disabled:opacity-40"
       >
-        <ChevronRight className="h-4 w-4" />
+        <ChevronLeft className="h-4 w-4" />
       </button>
       <button
         type="button"
@@ -59,7 +59,7 @@ function CustomCaption(props: CustomCaptionProps) {
         aria-label="חודש הבא"
         className="rounded-full border border-slate-200 bg-white/80 p-1 text-slate-500 transition hover:bg-slate-100 disabled:opacity-40"
       >
-        <ChevronLeft className="h-4 w-4" />
+        <ChevronRight className="h-4 w-4" />
       </button>
     </div>
   );
