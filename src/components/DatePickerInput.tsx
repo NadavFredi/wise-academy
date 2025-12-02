@@ -109,12 +109,17 @@ export const DatePickerInput = forwardRef<HTMLInputElement, DatePickerInputProps
     const [isYearInputMode, setIsYearInputMode] = useState(false)
     const [yearInputValue, setYearInputValue] = useState("")
     const [portalStyles, setPortalStyles] = useState<CSSProperties>()
+    const [calendarViewMonth, setCalendarViewMonth] = useState<Date | null>(null)
 
     useImperativeHandle(ref, () => inputRef.current as HTMLInputElement)
 
     useEffect(() => {
       setInputValue(value ? format(value, displayFormat) : "")
-    }, [value, displayFormat])
+      // Reset calendar view month when value changes externally
+      if (value && !open) {
+        setCalendarViewMonth(null)
+      }
+    }, [value, displayFormat, open])
 
     useEffect(() => {
       const handleClickOutside = (event: MouseEvent) => {
@@ -129,6 +134,7 @@ export const DatePickerInput = forwardRef<HTMLInputElement, DatePickerInputProps
           setOpen(false)
           setInputValue(value ? format(value, displayFormat) : "")
           setCalendarView("day")
+          setCalendarViewMonth(null)
           setIsTypingMode(false)
         }
       }
@@ -154,6 +160,8 @@ export const DatePickerInput = forwardRef<HTMLInputElement, DatePickerInputProps
       if (open) {
         setCalendarView("day")
         lastPointerDownInsideRef.current = false
+        // Reset calendar view month to current value when opening
+        setCalendarViewMonth(null)
       }
     }, [open])
 
@@ -220,6 +228,7 @@ export const DatePickerInput = forwardRef<HTMLInputElement, DatePickerInputProps
         setInputValue(format(date, displayFormat))
         setOpen(false)
         setCalendarView("day")
+        setCalendarViewMonth(null) // Reset calendar view month when date is selected
         setIsTypingMode(false)
         lastPointerDownInsideRef.current = false
         suppressNextFocusRef.current = true
@@ -286,11 +295,11 @@ export const DatePickerInput = forwardRef<HTMLInputElement, DatePickerInputProps
         // Reset typing ref
         isTypingRef.current = false
         setIsTypingMode(false)
-        
+
         // Parse the draft value (what user typed) or the current input value
         const valueToParse = isTypingMode ? draftValue : inputValue
         const parsed = parseInputDate(valueToParse)
-        
+
         if (parsed && isValid(parsed)) {
           onChange(parsed)
           setInputValue(format(parsed, displayFormat))
@@ -311,7 +320,7 @@ export const DatePickerInput = forwardRef<HTMLInputElement, DatePickerInputProps
       // Enter typing mode on any printable key press (except special navigation keys)
       const isPrintableKey = event.key.length === 1 || ['Backspace', 'Delete'].includes(event.key)
       const isNavigationKey = ['Tab', 'Escape', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'Enter'].includes(event.key)
-      
+
       if (!isTypingMode && isPrintableKey && !isNavigationKey) {
         isTypingRef.current = true
         setIsTypingMode(true)
@@ -331,10 +340,13 @@ export const DatePickerInput = forwardRef<HTMLInputElement, DatePickerInputProps
     }, [value, displayFormat, isTypingMode])
 
     const calendarMonth = useMemo(() => {
+      // If we have a calendar view month set (for navigation), use it
+      if (calendarViewMonth) return calendarViewMonth
+      // Otherwise, use the parsed input or selected value
       const parsed = parseInputDate(isTypingMode ? draftValue : inputValue)
       if (parsed) return parsed
       return value ?? new Date()
-    }, [inputValue, value, isTypingMode, draftValue])
+    }, [inputValue, value, isTypingMode, draftValue, calendarViewMonth])
 
     // Generate month options (0-11)
     const monthOptions = useMemo(() => {
@@ -367,21 +379,21 @@ export const DatePickerInput = forwardRef<HTMLInputElement, DatePickerInputProps
               onChange={(event) => {
                 // Mark that user is actively typing
                 isTypingRef.current = true
-                
+
                 // If not in typing mode, enter it
                 if (!isTypingMode) {
                   setIsTypingMode(true)
                   // Close calendar when user starts typing
                   setOpen(false)
                 }
-                
+
                 const raw = event.target.value
                 // Allow user to type freely - only sanitize to allow digits and separators
                 const sanitized = raw.replace(/[^\d./-]/g, "")
-                
+
                 // Store the raw sanitized value as draft (don't auto-format while typing)
                 setDraftValue(sanitized)
-                
+
                 // Try to parse as user types (for better UX) but don't force format
                 if (sanitized.length >= 6) {
                   const parsed = parseInputDate(sanitized)
@@ -467,18 +479,18 @@ export const DatePickerInput = forwardRef<HTMLInputElement, DatePickerInputProps
                         className="text-gray-600 hover:text-gray-900 cursor-pointer hover:bg-gray-50 px-2 py-1 rounded"
                         onMouseDown={(event) => event.preventDefault()}
                         onClick={() => {
+                          // In RTL, right arrow (→) should go to previous month (decrease)
                           const newMonth = new Date(calendarMonth)
                           newMonth.setMonth(newMonth.getMonth() - 1)
+                          // Only update the calendar view month, not the selected date
+                          setCalendarViewMonth(newMonth)
                           setCalendarView("day")
-                          // Update calendar month for navigation
-                          const newDate = value ? new Date(value) : newMonth
-                          newDate.setMonth(newMonth.getMonth())
-                          onChange(newDate)
                         }}
                         aria-label="חודש קודם"
                       >
-                        ←
+                        →
                       </button>
+
                       <button
                         type="button"
                         className="text-sm font-semibold text-gray-700 hover:text-gray-900 cursor-pointer hover:bg-gray-50 px-2 py-1 rounded"
@@ -492,17 +504,16 @@ export const DatePickerInput = forwardRef<HTMLInputElement, DatePickerInputProps
                         className="text-gray-600 hover:text-gray-900 cursor-pointer hover:bg-gray-50 px-2 py-1 rounded"
                         onMouseDown={(event) => event.preventDefault()}
                         onClick={() => {
+                          // In RTL, left arrow (←) should go to next month (increase)
                           const newMonth = new Date(calendarMonth)
                           newMonth.setMonth(newMonth.getMonth() + 1)
+                          // Only update the calendar view month, not the selected date
+                          setCalendarViewMonth(newMonth)
                           setCalendarView("day")
-                          // Update calendar month for navigation
-                          const newDate = value ? new Date(value) : newMonth
-                          newDate.setMonth(newMonth.getMonth())
-                          onChange(newDate)
                         }}
                         aria-label="חודש הבא"
                       >
-                        →
+                        ←
                       </button>
                     </div>
                     <button
@@ -536,165 +547,165 @@ export const DatePickerInput = forwardRef<HTMLInputElement, DatePickerInputProps
                 </div>
               )}
 
-            {calendarView === "month" && (
-              <div>
-                <div className="sticky top-0 bg-white border-b border-gray-200 px-3 py-2 flex items-center justify-between z-10">
-                  <button
-                    type="button"
-                    className="text-sm text-gray-600 hover:text-gray-900 cursor-pointer"
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => setCalendarView("year")}
-                  >
-                    {currentYear}
-                  </button>
-                  <button
-                    type="button"
-                    className="text-sm text-gray-600 hover:text-gray-900 cursor-pointer"
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => setCalendarView("day")}
-                  >
-                    ← חזור
-                  </button>
-                </div>
-                <div className="p-3">
-                  <div className="grid grid-cols-3 gap-2">
-                    {monthOptions.map((month) => {
-                      const monthDate = new Date(currentYear, month, 1)
-                      const monthName = format(monthDate, "MMM", { locale: he })
-                      const isSelected = currentMonth === month
-                      const isCurrentMonth = new Date().getMonth() === month && new Date().getFullYear() === currentYear
-                      return (
-                        <button
-                          key={month}
-                          type="button"
-                          className={cn(
-                            "px-3 py-2 text-sm rounded hover:bg-gray-100 text-right",
-                            isSelected && "bg-blue-100 font-medium text-blue-900",
-                            isCurrentMonth && !isSelected && "bg-gray-50"
-                          )}
-                          onMouseDown={(event) => event.preventDefault()}
-                          onClick={() => handleSelectMonth(month, currentYear)}
-                        >
-                          {monthName}
-                        </button>
-                      )
-                    })}
+              {calendarView === "month" && (
+                <div>
+                  <div className="sticky top-0 bg-white border-b border-gray-200 px-3 py-2 flex items-center justify-between z-10">
+                    <button
+                      type="button"
+                      className="text-sm text-gray-600 hover:text-gray-900 cursor-pointer"
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => setCalendarView("year")}
+                    >
+                      {currentYear}
+                    </button>
+                    <button
+                      type="button"
+                      className="text-sm text-gray-600 hover:text-gray-900 cursor-pointer"
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => setCalendarView("day")}
+                    >
+                      ← חזור
+                    </button>
+                  </div>
+                  <div className="p-3">
+                    <div className="grid grid-cols-3 gap-2">
+                      {monthOptions.map((month) => {
+                        const monthDate = new Date(currentYear, month, 1)
+                        const monthName = format(monthDate, "MMM", { locale: he })
+                        const isSelected = currentMonth === month
+                        const isCurrentMonth = new Date().getMonth() === month && new Date().getFullYear() === currentYear
+                        return (
+                          <button
+                            key={month}
+                            type="button"
+                            className={cn(
+                              "px-3 py-2 text-sm rounded hover:bg-gray-100 text-right",
+                              isSelected && "bg-blue-100 font-medium text-blue-900",
+                              isCurrentMonth && !isSelected && "bg-gray-50"
+                            )}
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={() => handleSelectMonth(month, currentYear)}
+                          >
+                            {monthName}
+                          </button>
+                        )
+                      })}
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            {calendarView === "year" && (
-              <div>
-                <div className="sticky top-0 bg-white border-b border-gray-200 px-3 py-2 flex items-center justify-between z-10">
-                  {isYearInputMode ? (
-                    <div className="flex items-center gap-2 flex-1">
-                      <Input
-                        type="text"
-                        inputMode="numeric"
-                        value={yearInputValue}
-                        onChange={(e) => {
-                          const val = e.target.value
-                          // Allow any numeric input (draft state) - only restrict non-numeric characters
-                          if (val === "" || /^\d+$/.test(val)) {
-                            setYearInputValue(val)
-                          }
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault()
+              {calendarView === "year" && (
+                <div>
+                  <div className="sticky top-0 bg-white border-b border-gray-200 px-3 py-2 flex items-center justify-between z-10">
+                    {isYearInputMode ? (
+                      <div className="flex items-center gap-2 flex-1">
+                        <Input
+                          type="text"
+                          inputMode="numeric"
+                          value={yearInputValue}
+                          onChange={(e) => {
+                            const val = e.target.value
+                            // Allow any numeric input (draft state) - only restrict non-numeric characters
+                            if (val === "" || /^\d+$/.test(val)) {
+                              setYearInputValue(val)
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault()
+                              const year = parseInt(yearInputValue)
+                              if (!isNaN(year) && year >= 1000 && year <= 9999) {
+                                handleSelectYear(year)
+                              } else {
+                                // Invalid year - reset to current year
+                                setIsYearInputMode(false)
+                                setYearInputValue("")
+                              }
+                            } else if (e.key === "Escape") {
+                              setIsYearInputMode(false)
+                              setYearInputValue("")
+                            }
+                          }}
+                          onBlur={(e) => {
                             const year = parseInt(yearInputValue)
                             if (!isNaN(year) && year >= 1000 && year <= 9999) {
                               handleSelectYear(year)
                             } else {
-                              // Invalid year - reset to current year
+                              // Invalid year - reset to current year and close input mode
                               setIsYearInputMode(false)
                               setYearInputValue("")
                             }
-                          } else if (e.key === "Escape") {
-                            setIsYearInputMode(false)
-                            setYearInputValue("")
-                          }
-                        }}
-                        onBlur={(e) => {
-                          const year = parseInt(yearInputValue)
-                          if (!isNaN(year) && year >= 1000 && year <= 9999) {
-                            handleSelectYear(year)
-                          } else {
-                            // Invalid year - reset to current year and close input mode
-                            setIsYearInputMode(false)
-                            setYearInputValue("")
-                          }
-                        }}
-                        placeholder="הכנס שנה"
-                        className="text-right text-sm h-8"
-                        autoFocus
-                      />
-                      <button
-                        type="button"
-                        className="text-xs text-gray-600 hover:text-gray-900"
-                        onClick={() => {
-                          setIsYearInputMode(false)
-                          setYearInputValue("")
-                        }}
-                      >
-                        ביטול
-                      </button>
-                    </div>
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        className="text-sm font-medium text-gray-900 hover:text-blue-600 cursor-pointer"
-                        onMouseDown={(event) => event.preventDefault()}
-                        onClick={() => {
-                          setIsYearInputMode(true)
-                          setYearInputValue(currentYear.toString())
-                          requestAnimationFrame(() => {
-                            const input = calendarContainerRef.current?.querySelector('input[type="number"]') as HTMLInputElement
-                            input?.select()
-                          })
-                        }}
-                      >
-                        {yearOptions[0]} - {yearOptions[yearOptions.length - 1]}
-                      </button>
-                      <button
-                        type="button"
-                        className="text-sm text-gray-600 hover:text-gray-900 cursor-pointer"
-                        onMouseDown={(event) => event.preventDefault()}
-                        onClick={() => setCalendarView("month")}
-                      >
-                        ← חזור
-                      </button>
-                    </>
-                  )}
-                </div>
-                <div className="p-3 max-h-[300px] overflow-y-auto">
-                  <div className="grid grid-cols-4 gap-2">
-                    {yearOptions.map((year) => {
-                      const isSelected = currentYear === year
-                      const isCurrentYear = new Date().getFullYear() === year
-                      return (
+                          }}
+                          placeholder="הכנס שנה"
+                          className="text-right text-sm h-8"
+                          autoFocus
+                        />
                         <button
-                          key={year}
                           type="button"
-                          className={cn(
-                            "px-3 py-2 text-sm rounded hover:bg-gray-100 text-right",
-                            isSelected && "bg-blue-100 font-medium text-blue-900",
-                            isCurrentYear && !isSelected && "bg-gray-50"
-                          )}
-                          onMouseDown={(event) => event.preventDefault()}
-                          onClick={() => handleSelectYear(year)}
+                          className="text-xs text-gray-600 hover:text-gray-900"
+                          onClick={() => {
+                            setIsYearInputMode(false)
+                            setYearInputValue("")
+                          }}
                         >
-                          {year}
+                          ביטול
                         </button>
-                      )
-                    })}
+                      </div>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          className="text-sm font-medium text-gray-900 hover:text-blue-600 cursor-pointer"
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => {
+                            setIsYearInputMode(true)
+                            setYearInputValue(currentYear.toString())
+                            requestAnimationFrame(() => {
+                              const input = calendarContainerRef.current?.querySelector('input[type="number"]') as HTMLInputElement
+                              input?.select()
+                            })
+                          }}
+                        >
+                          {yearOptions[0]} - {yearOptions[yearOptions.length - 1]}
+                        </button>
+                        <button
+                          type="button"
+                          className="text-sm text-gray-600 hover:text-gray-900 cursor-pointer"
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => setCalendarView("month")}
+                        >
+                          ← חזור
+                        </button>
+                      </>
+                    )}
+                  </div>
+                  <div className="p-3 max-h-[300px] overflow-y-auto">
+                    <div className="grid grid-cols-4 gap-2">
+                      {yearOptions.map((year) => {
+                        const isSelected = currentYear === year
+                        const isCurrentYear = new Date().getFullYear() === year
+                        return (
+                          <button
+                            key={year}
+                            type="button"
+                            className={cn(
+                              "px-3 py-2 text-sm rounded hover:bg-gray-100 text-right",
+                              isSelected && "bg-blue-100 font-medium text-blue-900",
+                              isCurrentYear && !isSelected && "bg-gray-50"
+                            )}
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={() => handleSelectYear(year)}
+                          >
+                            {year}
+                          </button>
+                        )
+                      })}
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
           )
 
           return usePortal ? createPortal(calendarNode, document.body) : calendarNode

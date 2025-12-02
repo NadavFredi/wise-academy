@@ -13,6 +13,7 @@ import {
   useGetLessonsQuery,
   useGetAttendanceQuery,
   useCreateLessonMutation,
+  useCreateMultipleLessonsMutation,
   useUpdateLessonMutation,
   useDeleteLessonMutation,
   useUpdateAttendanceMutation,
@@ -25,22 +26,26 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Textarea } from "@/components/ui/textarea";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, LogOut, StickyNote, MessageSquare, MoreVertical, Edit, Trash2, RefreshCw, Save } from "lucide-react";
+import { Plus, LogOut, StickyNote, MessageSquare, MoreVertical, Edit, Trash2, RefreshCw, Save, Calendar } from "lucide-react";
 import { format, subMonths } from "date-fns";
 import { he } from "date-fns/locale/he";
 import { cn } from "@/lib/utils";
 import Footer from "@/components/Footer";
 import { DatePickerInput } from "@/components/DatePickerInput";
 import { AutocompleteFilter } from "@/components/AutocompleteFilter";
-import Highcharts from "highcharts";
-import HighchartsReact from "highcharts-react-official";
 import wiseLogo from "@/assets/icons/wise-logo.webp";
 import { supabase } from "@/lib/supabase";
+import { NoteDialog } from "@/components/dialogs/NoteDialog";
+import { EditLessonDialog } from "@/components/dialogs/EditLessonDialog";
+import { DeleteLessonDialog } from "@/components/dialogs/DeleteLessonDialog";
+import { ChartDateDetailsDialog } from "@/components/dialogs/ChartDateDetailsDialog";
+import { MultipleLessonsDialog } from "@/components/dialogs/MultipleLessonsDialog";
+import { AttendanceChart } from "@/components/graphs/AttendanceChart";
+import { StudentAttendanceBarChart } from "@/components/graphs/StudentAttendanceBarChart";
+import { StudentPercentageChart } from "@/components/graphs/StudentPercentageChart";
 
 const Attendance = () => {
   const navigate = useNavigate();
@@ -85,6 +90,9 @@ const Attendance = () => {
   const [lessonToDelete, setLessonToDelete] = useState<{ id: string; date: string } | null>(null);
   const [cohortFilterRefreshKey, setCohortFilterRefreshKey] = useState(0);
   const justSyncedRef = useRef(false);
+  const [multipleLessonsModalOpen, setMultipleLessonsModalOpen] = useState(false);
+  const [multipleLessonDates, setMultipleLessonDates] = useState<Date[]>([]);
+  const [newDateToAdd, setNewDateToAdd] = useState<Date | null>(new Date());
 
   // Local state for pending attendance changes
   const [pendingAttendanceChanges, setPendingAttendanceChanges] = useState<
@@ -117,6 +125,7 @@ const Attendance = () => {
   }, [cohorts]);
 
   const [createLesson, { isLoading: creatingLesson }] = useCreateLessonMutation();
+  const [createMultipleLessons, { isLoading: creatingMultipleLessons }] = useCreateMultipleLessonsMutation();
   const [updateLesson] = useUpdateLessonMutation();
   const [deleteLesson] = useDeleteLessonMutation();
   const [updateAttendance] = useUpdateAttendanceMutation();
@@ -553,6 +562,75 @@ const Attendance = () => {
     }
   };
 
+  const handleAddDateToMultiple = () => {
+    if (!newDateToAdd) return;
+
+    // Check if date already exists
+    const dateString = format(newDateToAdd, "yyyy-MM-dd");
+    const alreadyExists = multipleLessonDates.some(
+      date => format(date, "yyyy-MM-dd") === dateString
+    );
+
+    if (alreadyExists) {
+      toast({
+        title: "תאריך כבר קיים",
+        description: "התאריך כבר נוסף לרשימה",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setMultipleLessonDates([...multipleLessonDates, newDateToAdd].sort((a, b) => a.getTime() - b.getTime()));
+    setNewDateToAdd(new Date());
+  };
+
+  const handleRemoveDateFromMultiple = (index: number) => {
+    setMultipleLessonDates(multipleLessonDates.filter((_, i) => i !== index));
+  };
+
+  const handleCreateMultipleLessons = async () => {
+    if (!localCohortId) {
+      toast({
+        title: "שגיאה",
+        description: "אנא בחר מחזור",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (multipleLessonDates.length === 0) {
+      toast({
+        title: "שגיאה",
+        description: "אנא הוסף לפחות תאריך אחד",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const dateStrings = multipleLessonDates.map(date => format(date, "yyyy-MM-dd"));
+      await createMultipleLessons({
+        cohortId: localCohortId,
+        lessonDates: dateStrings,
+      }).unwrap();
+
+      toast({
+        title: "הצלחה",
+        description: `נוצרו ${multipleLessonDates.length} שיעורים בהצלחה`,
+      });
+
+      setMultipleLessonDates([]);
+      setNewDateToAdd(new Date());
+      setMultipleLessonsModalOpen(false);
+    } catch (error: any) {
+      toast({
+        title: "שגיאה",
+        description: error.message || "אירעה שגיאה ביצירת השיעורים",
+        variant: "destructive",
+      });
+    }
+  };
+
   const handleAttendanceChange = (
     lessonId: string,
     studentId: string,
@@ -802,6 +880,16 @@ const Attendance = () => {
                   <Button onClick={handleCreateLesson} disabled={creatingLesson} size="sm" className="w-full">
                     <Plus className="ml-2 h-4 w-4" />
                     צור שיעור
+                  </Button>
+                  <Button
+                    onClick={() => setMultipleLessonsModalOpen(true)}
+                    disabled={creatingLesson || !localCohortId}
+                    size="sm"
+                    variant="outline"
+                    className="w-full"
+                  >
+                    <Calendar className="ml-2 h-4 w-4" />
+                    צור שיעורים מרובים
                   </Button>
                 </div>
               </CardContent>
@@ -1070,126 +1158,19 @@ const Attendance = () => {
                     <CardTitle>גרף נוכחות</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div dir="rtl">
-                      <HighchartsReact
-                        highcharts={Highcharts}
-                        options={{
-                          chart: {
-                            type: "line",
-                          },
-                          title: {
-                            text: "נוכחות לפי תאריך",
-                            style: {
-                              fontFamily: "inherit",
-                            },
-                          },
-                          xAxis: {
-                            categories: chartData.dates,
-                            title: {
-                              text: "תאריך",
-                              style: {
-                                fontFamily: "inherit",
-                              },
-                            },
-                            labels: {
-                              style: {
-                                fontFamily: "inherit",
-                              },
-                            },
-                          },
-                          yAxis: {
-                            title: {
-                              text: "מספר תלמידים",
-                              style: {
-                                fontFamily: "inherit",
-                              },
-                            },
-                            labels: {
-                              style: {
-                                fontFamily: "inherit",
-                              },
-                            },
-                          },
-                          series: [
-                            {
-                              name: "נוכחים",
-                              data: chartData.attendedData,
-                              color: "#22c55e",
-                            },
-                            {
-                              name: "נעדרים",
-                              data: chartData.absentData,
-                              color: "#ef4444",
-                            },
-                          ],
-                          legend: {
-                            align: "right",
-                            verticalAlign: "top",
-                            itemStyle: {
-                              fontFamily: "inherit",
-                            },
-                          },
-                          plotOptions: {
-                            line: {
-                              dataLabels: {
-                                enabled: true,
-                              },
-                              enableMouseTracking: true,
-                            },
-                            series: {
-                              point: {
-                                events: {
-                                  click: function (this: any) {
-                                    const dateIndex = this.x;
-                                    const lesson = filteredLessons[dateIndex];
-                                    if (lesson) {
-                                      setSelectedChartDateData({
-                                        date: lesson.lesson_date,
-                                        lessonId: lesson.id,
-                                      });
-                                      setChartDateModalOpen(true);
-                                    }
-                                  },
-                                },
-                              },
-                            },
-                          },
-                          tooltip: {
-                            shared: true,
-                            useHTML: true,
-                            formatter: function (this: any) {
-                              const dateIndex = this.x;
-                              const lesson = filteredLessons[dateIndex];
-                              if (!lesson) return "";
-
-                              const date = format(new Date(lesson.lesson_date), "dd/MM/yyyy", { locale: he });
-                              let tooltip = `<div dir="rtl"><b>${date}</b><br/>`;
-
-                              this.points?.forEach((point: any) => {
-                                tooltip += `${point.series.name}: <b>${point.y}</b><br/>`;
-                              });
-
-                              tooltip += "</div>";
-                              return tooltip;
-                            },
-                          },
-                          lang: {
-                            loading: "טוען...",
-                            months: ["ינואר", "פברואר", "מרץ", "אפריל", "מאי", "יוני", "יולי", "אוגוסט", "ספטמבר", "אוקטובר", "נובמבר", "דצמבר"],
-                            weekdays: ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"],
-                            shortMonths: ["ינו", "פבר", "מרץ", "אפר", "מאי", "יונ", "יול", "אוג", "ספט", "אוק", "נוב", "דצמ"],
-                            rangeSelectorFrom: "מ",
-                            rangeSelectorTo: "עד",
-                            rangeSelectorZoom: "זום",
-                            downloadPNG: "הורד PNG",
-                            downloadJPEG: "הורד JPEG",
-                            downloadPDF: "הורד PDF",
-                            downloadSVG: "הורד SVG",
-                            printChart: "הדפס גרף",
-                          },
-                        }}
-                      />
-                    </div>
+                    <AttendanceChart
+                      lessons={filteredLessons}
+                      dates={chartData.dates}
+                      attendedData={chartData.attendedData}
+                      absentData={chartData.absentData}
+                      onDateClick={(lesson) => {
+                        setSelectedChartDateData({
+                          date: lesson.lesson_date,
+                          lessonId: lesson.id,
+                        });
+                        setChartDateModalOpen(true);
+                      }}
+                    />
                   </CardContent>
                 </Card>
               )}
@@ -1212,85 +1193,12 @@ const Attendance = () => {
                       <CardTitle>נוכחויות והיעדרויות</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <div dir="rtl">
-                        <HighchartsReact
-                          highcharts={Highcharts}
-                          options={{
-                            chart: {
-                              type: "bar",
-                            },
-                            title: {
-                              text: "נוכחויות והיעדרויות לכל תלמיד",
-                            },
-                            xAxis: {
-                              categories: studentGraphsData.map((d) => d.studentName),
-                              title: {
-                                text: "תלמיד",
-                              },
-                            },
-                            yAxis: {
-                              title: {
-                                text: "מספר שיעורים",
-                              },
-                            },
-                            series: [
-                              {
-                                name: "נוכחויות",
-                                data: studentGraphsData.map((d) => d.totalAttended),
-                                color: "#22c55e",
-                              },
-                              {
-                                name: "היעדרויות",
-                                data: studentGraphsData.map((d) => d.totalAbsent),
-                                color: "#ef4444",
-                              },
-                            ],
-                            legend: {
-                              align: "right",
-                              verticalAlign: "top",
-                            },
-                            plotOptions: {
-                              bar: {
-                                dataLabels: {
-                                  enabled: true,
-                                },
-                                enableMouseTracking: true,
-                                point: {
-                                  events: {
-                                    click: function (this: any) {
-                                      const studentIndex = this.x;
-                                      const studentData = studentGraphsData[studentIndex];
-                                      if (studentData) {
-                                        if (this.series.name === "נוכחויות") {
-                                          setSelectedStudentGraph('attendance');
-                                        } else {
-                                          setSelectedStudentGraph('absence');
-                                        }
-                                      }
-                                    },
-                                  },
-                                },
-                              },
-                            },
-                            tooltip: {
-                              shared: true,
-                              useHTML: true,
-                              formatter: function (this: any) {
-                                const studentIndex = this.x;
-                                const studentData = studentGraphsData[studentIndex];
-                                if (!studentData) return "";
-
-                                let tooltip = `<div dir="rtl"><b>${studentData.studentName}</b><br/>`;
-                                this.points?.forEach((point: any) => {
-                                  tooltip += `${point.series.name}: <b>${point.y}</b><br/>`;
-                                });
-                                tooltip += `אחוז נוכחות: <b>${studentData.percentage}%</b></div>`;
-                                return tooltip;
-                              },
-                            },
-                          }}
-                        />
-                      </div>
+                      <StudentAttendanceBarChart
+                        data={studentGraphsData}
+                        onStudentClick={(studentData, type) => {
+                          setSelectedStudentGraph(type === 'attendance' ? 'attendance' : 'absence');
+                        }}
+                      />
                     </CardContent>
                   </Card>
 
@@ -1300,71 +1208,12 @@ const Attendance = () => {
                       <CardTitle>אחוז נוכחות</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <div dir="rtl">
-                        <HighchartsReact
-                          highcharts={Highcharts}
-                          options={{
-                            chart: {
-                              type: "bar",
-                            },
-                            title: {
-                              text: "אחוז נוכחות לכל תלמיד",
-                            },
-                            xAxis: {
-                              categories: studentGraphsData.map((d) => d.studentName),
-                              title: {
-                                text: "תלמיד",
-                              },
-                            },
-                            yAxis: {
-                              title: {
-                                text: "אחוז נוכחות (%)",
-                              },
-                              max: 100,
-                            },
-                            series: [
-                              {
-                                name: "אחוז נוכחות",
-                                data: studentGraphsData.map((d) => d.percentage),
-                                color: "#3b82f6",
-                              },
-                            ],
-                            legend: {
-                              align: "right",
-                              verticalAlign: "top",
-                            },
-                            plotOptions: {
-                              bar: {
-                                dataLabels: {
-                                  enabled: true,
-                                  format: "{y}%",
-                                },
-                                enableMouseTracking: true,
-                                point: {
-                                  events: {
-                                    click: function (this: any) {
-                                      const studentIndex = this.x;
-                                      const studentData = studentGraphsData[studentIndex];
-                                      if (studentData) {
-                                        setSelectedStudentGraph('percentage');
-                                      }
-                                    },
-                                  },
-                                },
-                              },
-                            },
-                            tooltip: {
-                              useHTML: true,
-                              formatter: function (this: any) {
-                                const studentIndex = this.x;
-                                const studentData = studentGraphsData[studentIndex];
-                                if (!studentData) return "";
-                                return `<div dir="rtl"><b>${studentData.studentName}</b><br/>אחוז נוכחות: <b>${studentData.percentage}%</b><br/>נוכחויות: ${studentData.totalAttended} | היעדרויות: ${studentData.totalAbsent}</div>`;
-                              },
-                            },
-                          }}
-                        />
-                      </div>
+                      <StudentPercentageChart
+                        data={studentGraphsData}
+                        onStudentClick={(studentData) => {
+                          setSelectedStudentGraph('percentage');
+                        }}
+                      />
                     </CardContent>
                   </Card>
                 </div>
@@ -1392,234 +1241,78 @@ const Attendance = () => {
       </div>
       <Footer />
 
-      {/* Note Modal */}
-      <Dialog open={noteModalOpen} onOpenChange={setNoteModalOpen}>
-        <DialogContent className="sm:max-w-[500px]" dir="rtl">
-          <DialogHeader>
-            <DialogTitle>הערה עבור {currentNoteData?.studentName}</DialogTitle>
-            <DialogDescription>
-              תאריך השיעור: {currentNoteData && format(new Date(currentNoteData.lessonDate), "dd/MM/yyyy", { locale: he })}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="py-4">
-            <Textarea
-              placeholder="הוסף הערה..."
-              value={noteInput}
-              onChange={(e) => setNoteInput(e.target.value)}
-              className="min-h-[120px] resize-none"
-              dir="rtl"
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setNoteModalOpen(false)}>
-              ביטול
-            </Button>
-            <Button onClick={handleSaveNote}>
-              שמור
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <NoteDialog
+        open={noteModalOpen}
+        onOpenChange={setNoteModalOpen}
+        studentName={currentNoteData?.studentName}
+        lessonDate={currentNoteData?.lessonDate}
+        note={noteInput}
+        onNoteChange={setNoteInput}
+        onSave={handleSaveNote}
+      />
 
-      {/* Edit Lesson Modal */}
-      <Dialog open={editLessonModalOpen} onOpenChange={setEditLessonModalOpen}>
-        <DialogContent className="sm:max-w-[500px]" dir="rtl">
-          <DialogHeader>
-            <DialogTitle>ערוך תאריך שיעור</DialogTitle>
-            <DialogDescription>
-              שנה את תאריך השיעור
-            </DialogDescription>
-          </DialogHeader>
-          <div className="py-4">
-            <Label htmlFor="edit-lesson-date">תאריך השיעור</Label>
-            <DatePickerInput
-              id="edit-lesson-date"
-              value={editLessonDate}
-              onChange={setEditLessonDate}
-              wrapperClassName="mt-1"
-              autoOpenOnFocus={false}
-              autoOpen={editLessonModalOpen}
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => {
-              setEditLessonModalOpen(false);
-              setCurrentLessonToEdit(null);
-              setEditLessonDate(null);
-            }}>
-              ביטול
-            </Button>
-            <Button onClick={handleSaveEditLesson}>
-              שמור
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <EditLessonDialog
+        open={editLessonModalOpen}
+        onOpenChange={setEditLessonModalOpen}
+        lessonDate={editLessonDate}
+        onLessonDateChange={setEditLessonDate}
+        onSave={handleSaveEditLesson}
+        onCancel={() => {
+          setEditLessonModalOpen(false);
+          setCurrentLessonToEdit(null);
+          setEditLessonDate(null);
+        }}
+      />
 
-      {/* Delete Lesson Modal */}
-      <Dialog open={deleteLessonModalOpen} onOpenChange={setDeleteLessonModalOpen}>
-        <DialogContent className="sm:max-w-[500px]" dir="rtl">
-          <DialogHeader>
-            <DialogTitle>מחיקת שיעור</DialogTitle>
-            <DialogDescription>
-              האם אתה בטוח שברצונך למחוק את השיעור מתאריך{" "}
-              {lessonToDelete && format(new Date(lessonToDelete.date), "dd/MM/yyyy", { locale: he })}?
-              <br />
-              <span className="text-destructive font-semibold mt-2 block">
-                פעולה זו תמחק גם את כל רשומות הנוכחות הקשורות לשיעור זה ולא ניתן לבטל אותה.
-              </span>
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => {
-              setDeleteLessonModalOpen(false);
-              setLessonToDelete(null);
-            }}>
-              ביטול
-            </Button>
-            <Button variant="destructive" onClick={handleConfirmDeleteLesson}>
-              מחק
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <DeleteLessonDialog
+        open={deleteLessonModalOpen}
+        onOpenChange={setDeleteLessonModalOpen}
+        lessonDate={lessonToDelete?.date}
+        onConfirm={handleConfirmDeleteLesson}
+        onCancel={() => {
+          setDeleteLessonModalOpen(false);
+          setLessonToDelete(null);
+        }}
+      />
 
-      {/* Chart Date Details Modal */}
-      <Dialog open={chartDateModalOpen} onOpenChange={(open) => {
-        setChartDateModalOpen(open);
-        if (!open) {
+      <ChartDateDetailsDialog
+        open={chartDateModalOpen}
+        onOpenChange={(open) => {
+          setChartDateModalOpen(open);
+          if (!open) {
+            setSelectedChartDateData(null);
+            setChartModalFilter('all');
+          }
+        }}
+        selectedDateData={selectedChartDateData}
+        lesson={selectedChartDateData ? filteredLessons.find((l) => l.id === selectedChartDateData.lessonId) : undefined}
+        students={selectedStudentIds.length > 0 ? filteredStudents : students}
+        attendanceRecords={attendanceRecords}
+        filter={chartModalFilter}
+        onFilterChange={setChartModalFilter}
+        onClose={() => {
+          setChartDateModalOpen(false);
           setSelectedChartDateData(null);
           setChartModalFilter('all');
-        }
-      }}>
-        <DialogContent className="sm:max-w-[600px]" dir="rtl">
-          <DialogHeader className="text-right ">
-            <DialogTitle className="text-right">
-              פרטי נוכחות - {selectedChartDateData && format(new Date(selectedChartDateData.date), "dd/MM/yyyy", { locale: he })}
-            </DialogTitle>
-            <DialogDescription className="text-right">
-              רשימת כל התלמידים והסטטוס שלהם בתאריך זה
-            </DialogDescription>
-          </DialogHeader>
-          <div className="py-4 max-h-[400px] overflow-y-auto">
-            {selectedChartDateData && (() => {
-              const lesson = filteredLessons.find((l) => l.id === selectedChartDateData.lessonId);
-              if (!lesson) return null;
+        }}
+      />
 
-              // Get students to count (filtered or all)
-              const studentsToCount = selectedStudentIds.length > 0
-                ? filteredStudents
-                : students;
-
-              const attendedList: Array<{ student: typeof students[0]; record?: typeof attendanceRecords[0] }> = [];
-              const absentList: Array<{ student: typeof students[0]; record?: typeof attendanceRecords[0] }> = [];
-
-              studentsToCount.forEach((student) => {
-                const attendanceRecord = attendanceRecords.find(
-                  (r) => r.lesson_id === lesson.id && r.student_id === student.id
-                );
-
-                if (attendanceRecord && attendanceRecord.attended) {
-                  // Student has record and attended
-                  attendedList.push({ student, record: attendanceRecord });
-                } else {
-                  // Student has no record or has record but didn't attend (missing)
-                  absentList.push({ student, record: attendanceRecord || undefined });
-                }
-              });
-
-              const handleFilterClick = (filter: 'attended' | 'absent') => {
-                if (chartModalFilter === filter) {
-                  // Second click: clear filter
-                  setChartModalFilter('all');
-                } else {
-                  // First click: set filter
-                  setChartModalFilter(filter);
-                }
-              };
-
-              const showAttended = chartModalFilter === 'all' || chartModalFilter === 'attended';
-              const showAbsent = chartModalFilter === 'all' || chartModalFilter === 'absent';
-
-              return (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div
-                      className={cn(
-                        "p-3 bg-green-50 rounded-md cursor-pointer transition-all hover:bg-green-100",
-                        chartModalFilter === 'attended' && "ring-2 ring-green-500"
-                      )}
-                      onClick={() => handleFilterClick('attended')}
-                    >
-                      <p className="text-sm font-semibold text-green-700">נוכחים</p>
-                      <p className="text-2xl font-bold text-green-700">{attendedList.length}</p>
-                    </div>
-                    <div
-                      className={cn(
-                        "p-3 bg-red-50 rounded-md cursor-pointer transition-all hover:bg-red-100",
-                        chartModalFilter === 'absent' && "ring-2 ring-red-500"
-                      )}
-                      onClick={() => handleFilterClick('absent')}
-                    >
-                      <p className="text-sm font-semibold text-red-700">נעדרים</p>
-                      <p className="text-2xl font-bold text-red-700">{absentList.length}</p>
-                    </div>
-                  </div>
-
-                  <div className="space-y-3">
-                    {showAttended && (
-                      <div>
-                        <h4 className="text-sm font-semibold mb-2 text-green-700">נוכחים ({attendedList.length})</h4>
-                        <div className="space-y-1">
-                          {attendedList.map((item) => (
-                            <div key={item.student.id} className="flex items-center justify-between p-2 bg-green-50 rounded text-sm">
-                              <span>{item.student.name}</span>
-                              {item.record?.note && (
-                                <span className="text-xs text-muted-foreground">הערה: {item.record.note}</span>
-                              )}
-                            </div>
-                          ))}
-                          {attendedList.length === 0 && (
-                            <p className="text-sm text-muted-foreground">אין נוכחים</p>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    {showAbsent && (
-                      <div>
-                        <h4 className="text-sm font-semibold mb-2 text-red-700">נעדרים ({absentList.length})</h4>
-                        <div className="space-y-1">
-                          {absentList.map((item) => (
-                            <div key={item.student.id} className="flex items-center justify-between p-2 bg-red-50 rounded text-sm">
-                              <span>{item.student.name}</span>
-                              {item.record?.note && (
-                                <span className="text-xs text-muted-foreground">הערה: {item.record.note}</span>
-                              )}
-                            </div>
-                          ))}
-                          {absentList.length === 0 && (
-                            <p className="text-sm text-muted-foreground">אין נעדרים</p>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })()}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => {
-              setChartDateModalOpen(false);
-              setSelectedChartDateData(null);
-              setChartModalFilter('all');
-            }}>
-              סגור
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <MultipleLessonsDialog
+        open={multipleLessonsModalOpen}
+        onOpenChange={setMultipleLessonsModalOpen}
+        dates={multipleLessonDates}
+        newDate={newDateToAdd}
+        onNewDateChange={setNewDateToAdd}
+        onAddDate={handleAddDateToMultiple}
+        onRemoveDate={handleRemoveDateFromMultiple}
+        onSave={handleCreateMultipleLessons}
+        onCancel={() => {
+          setMultipleLessonsModalOpen(false);
+          setMultipleLessonDates([]);
+          setNewDateToAdd(new Date());
+        }}
+        isCreating={creatingMultipleLessons}
+      />
     </div>
   );
 };
