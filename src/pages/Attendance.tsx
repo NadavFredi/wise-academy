@@ -248,103 +248,115 @@ const Attendance = () => {
         </div>
 
         <div className="container mx-auto px-6 py-6">
-          {/* Cohort Selection */}
-          <Card className="mb-6">
-            <CardHeader>
-              <CardTitle>בחירת Cohort</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Select
-                value={selectedCohortId || ""}
-                onValueChange={(value) => dispatch(setSelectedCohort(value))}
-              >
-                <SelectTrigger className="w-full md:w-[300px]">
-                  <SelectValue placeholder="בחר Cohort" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="00000000-0000-0000-0000-000000000001">
-                    Cohort 1
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </CardContent>
-          </Card>
+          {/* Three Cards in One Row */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            {/* Cohort Selection */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">בחירת Cohort</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Select
+                  value={selectedCohortId || ""}
+                  onValueChange={(value) => dispatch(setSelectedCohort(value))}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="בחר Cohort" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="00000000-0000-0000-0000-000000000001">
+                      Cohort 1
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </CardContent>
+            </Card>
 
-          {/* Create New Lesson */}
-          <Card className="mb-6">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Plus className="h-5 w-5" />
-                יצירת שיעור חדש
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex flex-col md:flex-row gap-4">
-                <div className="flex-1">
-                  <Label htmlFor="lesson-date">תאריך השיעור</Label>
-                  <DatePickerInput
-                    value={newLessonDate}
-                    onChange={setNewLessonDate}
-                    wrapperClassName="mt-1"
-                  />
-                </div>
-                <div className="flex items-end">
-                  <Button onClick={handleCreateLesson} disabled={creatingLesson}>
+            {/* Create New Lesson */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Plus className="h-4 w-4" />
+                  יצירת שיעור חדש
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  <div>
+                    <Label htmlFor="lesson-date" className="text-sm">תאריך השיעור</Label>
+                    <DatePickerInput
+                      value={newLessonDate}
+                      onChange={setNewLessonDate}
+                      wrapperClassName="mt-1"
+                    />
+                  </div>
+                  <Button onClick={handleCreateLesson} disabled={creatingLesson} size="sm" className="w-full">
                     <Plus className="ml-2 h-4 w-4" />
                     צור שיעור
                   </Button>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Date Filter with Autocomplete */}
-          {lessons.length > 0 && (
-            <Card className="mb-6">
-              <CardHeader>
-                <CardTitle>סינון תאריכים</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <AutocompleteFilter
-                    value={dateFilterValue}
-                    onChange={setDateFilterValue}
-                    onSelect={handleDateSelect}
-                    placeholder="חפש תאריך..."
-                    searchFn={dateSearchFn}
-                    minSearchLength={0}
-                    autoSearchOnFocus={true}
-                    initialLoadOnMount={true}
-                    initialResultsLimit={10}
-                  />
-                  <div className="flex flex-wrap gap-2">
-                    {lessons.map((lesson) => {
-                      const isSelected = selectedDates.includes(lesson.lesson_date);
-                      return (
-                        <Button
-                          key={lesson.id}
-                          variant={isSelected ? "default" : "outline"}
-                          size="sm"
-                          onClick={() => dispatch(toggleDate(lesson.lesson_date))}
-                        >
-                          {format(new Date(lesson.lesson_date), "dd/MM/yyyy", { locale: he })}
-                        </Button>
-                      );
-                    })}
-                    {selectedDates.length > 0 && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => dispatch(clearSelectedDates())}
-                      >
-                        נקה סינון
-                      </Button>
-                    )}
-                  </div>
-                </div>
               </CardContent>
             </Card>
-          )}
+
+            {/* Date Filter with Autocomplete */}
+            {lessons.length > 0 ? (
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">סינון תאריכים</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    <AutocompleteFilter
+                      value={dateFilterValue}
+                      onChange={setDateFilterValue}
+                      onSelect={handleDateSelect}
+                      placeholder="חפש תאריך..."
+                      searchFn={dateSearchFn}
+                      minSearchLength={0}
+                      autoSearchOnFocus={true}
+                      initialLoadOnMount={true}
+                      initialResultsLimit={10}
+                    />
+                    <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+                      {lessons.map((lesson) => {
+                        const isSelected = selectedDates.includes(lesson.lesson_date);
+                        return (
+                          <Button
+                            key={lesson.id}
+                            variant={isSelected ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => dispatch(toggleDate(lesson.lesson_date))}
+                            className="text-xs px-2 py-1 h-7"
+                          >
+                            {format(new Date(lesson.lesson_date), "dd/MM/yyyy", { locale: he })}
+                          </Button>
+                        );
+                      })}
+                      {selectedDates.length > 0 && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => dispatch(clearSelectedDates())}
+                          className="text-xs px-2 py-1 h-7"
+                        >
+                          נקה
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ) : (
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">סינון תאריכים</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-muted-foreground">אין שיעורים זמינים</p>
+                </CardContent>
+              </Card>
+            )}
+          </div>
 
           {/* Attendance Table */}
           {loading ? (
@@ -360,86 +372,88 @@ const Attendance = () => {
               <CardHeader>
                 <CardTitle>נוכחות תלמידים</CardTitle>
               </CardHeader>
-              <CardContent>
+              <CardContent className="p-0">
                 <div className="overflow-x-auto">
-                  <table className="w-full border-collapse">
-                    <thead>
-                      <tr className="border-b bg-accent/30">
-                        <th className="text-right p-4 font-semibold sticky right-0 bg-background z-10 border-r">
-                          תלמיד
-                        </th>
-                        {filteredLessons.map((lesson) => (
-                          <th
-                            key={lesson.id}
-                            className="text-center p-4 font-semibold min-w-[180px] whitespace-nowrap"
-                          >
-                            {format(new Date(lesson.lesson_date), "dd/MM/yyyy", { locale: he })}
+                  <div className="max-h-[600px] overflow-y-auto">
+                    <table className="w-full border-collapse">
+                      <thead className="sticky top-0 bg-background z-20">
+                        <tr className="border-b bg-accent/30">
+                          <th className="text-right p-2 font-semibold sticky right-0 bg-background z-30 border-r min-w-[100px]">
+                            תלמיד
                           </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {students.map((student) => (
-                        <tr
-                          key={student.id}
-                          className="border-b hover:bg-accent/30 transition-colors"
-                        >
-                          <td className="text-right p-4 font-medium sticky right-0 bg-background z-10 border-r">
-                            {student.name}
-                          </td>
-                          {filteredLessons.map((lesson) => {
-                            const key = `${lesson.id}-${student.id}`;
-                            const record = attendanceMap[key];
-                            const attended = record?.attended || false;
-                            const note = record?.note || "";
-                            const hasNote = note && note.trim().length > 0;
-
-                            return (
-                              <td key={lesson.id} className="p-3">
-                                <div className="flex items-center justify-center gap-2">
-                                  <Checkbox
-                                    checked={attended}
-                                    onCheckedChange={(checked) =>
-                                      handleAttendanceChange(
-                                        lesson.id,
-                                        student.id,
-                                        checked === true
-                                      )
-                                    }
-                                    className="h-5 w-5"
-                                  />
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      handleOpenNoteModal(
-                                        lesson.id,
-                                        student.id,
-                                        student.name,
-                                        lesson.lesson_date
-                                      )
-                                    }
-                                    className={cn(
-                                      "p-1.5 rounded-md transition-colors",
-                                      hasNote
-                                        ? "text-primary hover:bg-primary/10"
-                                        : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                                    )}
-                                    title={hasNote ? "ערוך הערה" : "הוסף הערה"}
-                                  >
-                                    {hasNote ? (
-                                      <MessageSquare className="h-4 w-4 fill-primary text-primary" />
-                                    ) : (
-                                      <StickyNote className="h-4 w-4" />
-                                    )}
-                                  </button>
-                                </div>
-                              </td>
-                            );
-                          })}
+                          {filteredLessons.map((lesson) => (
+                            <th
+                              key={lesson.id}
+                              className="text-center p-2 font-semibold min-w-[90px] whitespace-nowrap text-xs"
+                            >
+                              {format(new Date(lesson.lesson_date), "dd/MM/yyyy", { locale: he })}
+                            </th>
+                          ))}
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {students.map((student) => (
+                          <tr
+                            key={student.id}
+                            className="border-b hover:bg-accent/30 transition-colors"
+                          >
+                            <td className="text-right p-2 font-medium sticky right-0 bg-background z-10 border-r">
+                              <span className="text-sm">{student.name}</span>
+                            </td>
+                            {filteredLessons.map((lesson) => {
+                              const key = `${lesson.id}-${student.id}`;
+                              const record = attendanceMap[key];
+                              const attended = record?.attended || false;
+                              const note = record?.note || "";
+                              const hasNote = note && note.trim().length > 0;
+
+                              return (
+                                <td key={lesson.id} className="p-2">
+                                  <div className="flex items-center justify-center gap-1.5">
+                                    <Checkbox
+                                      checked={attended}
+                                      onCheckedChange={(checked) =>
+                                        handleAttendanceChange(
+                                          lesson.id,
+                                          student.id,
+                                          checked === true
+                                        )
+                                      }
+                                      className="h-4 w-4"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        handleOpenNoteModal(
+                                          lesson.id,
+                                          student.id,
+                                          student.name,
+                                          lesson.lesson_date
+                                        )
+                                      }
+                                      className={cn(
+                                        "p-1 rounded-md transition-colors",
+                                        hasNote
+                                          ? "text-primary hover:bg-primary/10"
+                                          : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                                      )}
+                                      title={hasNote ? "ערוך הערה" : "הוסף הערה"}
+                                    >
+                                      {hasNote ? (
+                                        <MessageSquare className="h-3.5 w-3.5 fill-primary text-primary" />
+                                      ) : (
+                                        <StickyNote className="h-3.5 w-3.5" />
+                                      )}
+                                    </button>
+                                  </div>
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </CardContent>
             </Card>
