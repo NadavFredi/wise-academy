@@ -57,6 +57,7 @@ const Attendance = () => {
     date: string;
     lessonId: string;
   } | null>(null);
+  const [chartModalFilter, setChartModalFilter] = useState<'all' | 'attended' | 'absent'>('all');
   const [noteModalOpen, setNoteModalOpen] = useState(false);
   const [currentNoteData, setCurrentNoteData] = useState<{
     lessonId: string;
@@ -992,9 +993,15 @@ const Attendance = () => {
       </Dialog>
 
       {/* Chart Date Details Modal */}
-      <Dialog open={chartDateModalOpen} onOpenChange={setChartDateModalOpen}>
+      <Dialog open={chartDateModalOpen} onOpenChange={(open) => {
+        setChartDateModalOpen(open);
+        if (!open) {
+          setSelectedChartDateData(null);
+          setChartModalFilter('all');
+        }
+      }}>
         <DialogContent className="sm:max-w-[600px]" dir="rtl">
-          <DialogHeader>
+          <DialogHeader className="text-right">
             <DialogTitle>
               פרטי נוכחות - {selectedChartDateData && format(new Date(selectedChartDateData.date), "dd/MM/yyyy", { locale: he })}
             </DialogTitle>
@@ -1029,53 +1036,82 @@ const Attendance = () => {
                 }
               });
 
+              const handleFilterClick = (filter: 'attended' | 'absent') => {
+                if (chartModalFilter === filter) {
+                  // Second click: clear filter
+                  setChartModalFilter('all');
+                } else {
+                  // First click: set filter
+                  setChartModalFilter(filter);
+                }
+              };
+
+              const showAttended = chartModalFilter === 'all' || chartModalFilter === 'attended';
+              const showAbsent = chartModalFilter === 'all' || chartModalFilter === 'absent';
+
               return (
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
-                    <div className="p-3 bg-green-50 rounded-md">
+                    <div
+                      className={cn(
+                        "p-3 bg-green-50 rounded-md cursor-pointer transition-all hover:bg-green-100",
+                        chartModalFilter === 'attended' && "ring-2 ring-green-500"
+                      )}
+                      onClick={() => handleFilterClick('attended')}
+                    >
                       <p className="text-sm font-semibold text-green-700">נוכחים</p>
                       <p className="text-2xl font-bold text-green-700">{attendedList.length}</p>
                     </div>
-                    <div className="p-3 bg-red-50 rounded-md">
+                    <div
+                      className={cn(
+                        "p-3 bg-red-50 rounded-md cursor-pointer transition-all hover:bg-red-100",
+                        chartModalFilter === 'absent' && "ring-2 ring-red-500"
+                      )}
+                      onClick={() => handleFilterClick('absent')}
+                    >
                       <p className="text-sm font-semibold text-red-700">נעדרים</p>
                       <p className="text-2xl font-bold text-red-700">{absentList.length}</p>
                     </div>
                   </div>
 
                   <div className="space-y-3">
-                    <div>
-                      <h4 className="text-sm font-semibold mb-2 text-green-700">נוכחים ({attendedList.length})</h4>
-                      <div className="space-y-1">
-                        {attendedList.map((item) => (
-                          <div key={item.student.id} className="flex items-center justify-between p-2 bg-green-50 rounded text-sm">
-                            <span>{item.student.name}</span>
-                            {item.record?.note && (
-                              <span className="text-xs text-muted-foreground">הערה: {item.record.note}</span>
-                            )}
-                          </div>
-                        ))}
-                        {attendedList.length === 0 && (
-                          <p className="text-sm text-muted-foreground">אין נוכחים</p>
-                        )}
+                    {showAttended && (
+                      <div>
+                        <h4 className="text-sm font-semibold mb-2 text-green-700">נוכחים ({attendedList.length})</h4>
+                        <div className="space-y-1">
+                          {attendedList.map((item) => (
+                            <div key={item.student.id} className="flex items-center justify-between p-2 bg-green-50 rounded text-sm">
+                              <span>{item.student.name}</span>
+                              {item.record?.note && (
+                                <span className="text-xs text-muted-foreground">הערה: {item.record.note}</span>
+                              )}
+                            </div>
+                          ))}
+                          {attendedList.length === 0 && (
+                            <p className="text-sm text-muted-foreground">אין נוכחים</p>
+                          )}
+                        </div>
                       </div>
-                    </div>
+                    )}
 
-                    <div>
-                      <h4 className="text-sm font-semibold mb-2 text-red-700">נעדרים ({absentList.length})</h4>
-                      <div className="space-y-1">
-                        {absentList.map((item) => (
-                          <div key={item.student.id} className="flex items-center justify-between p-2 bg-red-50 rounded text-sm">
-                            <span>{item.student.name}</span>
-                            {item.record?.note && (
-                              <span className="text-xs text-muted-foreground">הערה: {item.record.note}</span>
-                            )}
-                          </div>
-                        ))}
-                        {absentList.length === 0 && (
-                          <p className="text-sm text-muted-foreground">אין נעדרים</p>
-                        )}
+                    {showAbsent && (
+                      <div>
+                        <h4 className="text-sm font-semibold mb-2 text-red-700">נעדרים ({absentList.length})</h4>
+                        <div className="space-y-1">
+                          {absentList.map((item) => (
+                            <div key={item.student.id} className="flex items-center justify-between p-2 bg-red-50 rounded text-sm">
+                              <span>{item.student.name}</span>
+                              {item.record?.note && (
+                                <span className="text-xs text-muted-foreground">הערה: {item.record.note}</span>
+                              )}
+                            </div>
+                          ))}
+                          {absentList.length === 0 && (
+                            <p className="text-sm text-muted-foreground">אין נעדרים</p>
+                          )}
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </div>
                 </div>
               );
@@ -1085,6 +1121,7 @@ const Attendance = () => {
             <Button variant="outline" onClick={() => {
               setChartDateModalOpen(false);
               setSelectedChartDateData(null);
+              setChartModalFilter('all');
             }}>
               סגור
             </Button>
