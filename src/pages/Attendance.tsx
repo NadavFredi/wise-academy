@@ -947,7 +947,7 @@ const Attendance = () => {
                   </CardContent>
                 </Card>
               ) : (
-                <div className="space-y-6">
+                <div className="grid grid-cols-2 gap-6">
                   {/* Combined Attendance and Absence Graph */}
                   <Card>
                     <CardHeader className="text-right">
