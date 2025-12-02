@@ -1,6 +1,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Link, useLocation } from "react-router-dom";
+import wiseLogo from "@/assets/icons/wise-logo.webp";
 
 const Navigation = () => {
   const location = useLocation();
@@ -14,7 +15,7 @@ const Navigation = () => {
       <div className="container mx-auto px-6 py-4">
         <div className="flex items-center justify-between">
           <Link to="/" className="text-xl font-bold text-foreground hover:text-primary transition-colors">
-            SimpleWeb
+            EasyFlow
           </Link>
           
           <div className="flex items-center gap-2">
@@ -23,22 +24,27 @@ const Navigation = () => {
               size="sm"
               asChild
             >
-              <Link to="/">Home</Link>
+              <Link to="/">בית</Link>
             </Button>
             <Button
               variant={isActive('/about') ? 'default' : 'ghost'}
               size="sm"
               asChild
             >
-              <Link to="/about">About</Link>
+              <Link to="/about">אודות</Link>
             </Button>
             <Button
               variant={isActive('/contact') ? 'default' : 'ghost'}
               size="sm"
               asChild
             >
-              <Link to="/contact">Contact</Link>
+              <Link to="/contact">צור קשר</Link>
             </Button>
+            <img 
+              src={wiseLogo} 
+              alt="Wise Logo" 
+              className="h-8 w-auto ml-2"
+            />
           </div>
         </div>
       </div>
