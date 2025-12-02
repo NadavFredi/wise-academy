@@ -646,11 +646,13 @@ const Attendance = () => {
 
           {/* Tabs */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="mb-4" dir="rtl">
-              <TabsTrigger value="data">נתונים</TabsTrigger>
-              <TabsTrigger value="graphs">גרפי כיתה</TabsTrigger>
-              <TabsTrigger value="student-graphs">גרפי תלמידים</TabsTrigger>
-            </TabsList>
+            <div className="flex justify-end mb-4">
+              <TabsList dir="rtl">
+                <TabsTrigger value="data">נתונים</TabsTrigger>
+                <TabsTrigger value="graphs">גרפי כיתה</TabsTrigger>
+                <TabsTrigger value="student-graphs">גרפי תלמידים</TabsTrigger>
+              </TabsList>
+            </div>
 
             <TabsContent value="data">
               {/* Attendance Table */}
