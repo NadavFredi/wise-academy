@@ -42,10 +42,10 @@ const Attendance = () => {
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
   const { toast } = useToast();
-  
+
   const { isAuthenticated } = useAppSelector((state) => state.auth);
   const { selectedCohortId, selectedDates } = useAppSelector((state) => state.attendance);
-  
+
   const [newLessonDate, setNewLessonDate] = useState<Date | null>(new Date());
   const [startDate, setStartDate] = useState<Date | null>(null);
   const [endDate, setEndDate] = useState<Date | null>(null);
@@ -82,7 +82,7 @@ const Attendance = () => {
     selectedCohortId || "",
     { skip: !selectedCohortId }
   );
-  
+
   const { data: lessons = [], isLoading: lessonsLoading } = useGetLessonsQuery(
     selectedCohortId || "",
     { skip: !selectedCohortId }
@@ -122,12 +122,12 @@ const Attendance = () => {
   // Filter lessons by date range and sort from earliest to latest
   const filteredLessons = useMemo(() => {
     let filtered = lessons;
-    
+
     if (startDate || endDate) {
       filtered = lessons.filter((lesson) => {
         const lessonDate = new Date(lesson.lesson_date);
         lessonDate.setHours(0, 0, 0, 0);
-        
+
         if (startDate && endDate) {
           const start = new Date(startDate);
           start.setHours(0, 0, 0, 0);
@@ -146,7 +146,7 @@ const Attendance = () => {
         return true;
       });
     }
-    
+
     // Sort from earliest to latest
     return [...filtered].sort((a, b) => {
       const dateA = new Date(a.lesson_date).getTime();
@@ -177,7 +177,7 @@ const Attendance = () => {
       const attendedB = recordB?.attended || false;
 
       if (attendedA === attendedB) return 0;
-      
+
       if (sortState.order === 'asc') {
         // Ascending: attended first (true), then not attended (false)
         return attendedA ? -1 : 1;
@@ -446,9 +446,9 @@ const Attendance = () => {
           <div className="container mx-auto px-6 py-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
-                <img 
-                  src={wiseLogo} 
-                  alt="Wise Logo" 
+                <img
+                  src={wiseLogo}
+                  alt="Wise Logo"
                   className="h-20 w-auto"
                 />
                 <h1 className="text-2xl font-bold">מערכת נוכחות</h1>
@@ -622,137 +622,137 @@ const Attendance = () => {
                   </CardContent>
                 </Card>
               ) : (
-            <Card>
-              <CardHeader>
-                <CardTitle>נוכחות תלמידים</CardTitle>
-              </CardHeader>
-              <CardContent className="p-0">
-                <div className="overflow-x-auto">
-                  <div className="max-h-[600px] overflow-y-auto">
-                    <table className="w-full border-collapse">
-                      <thead className="sticky top-0 bg-background z-20">
-                        <tr className="border-b bg-accent/30">
-                          <th className="text-right p-2 font-semibold sticky right-0 bg-background z-30 border-r min-w-[100px]">
-                            תלמיד
-                          </th>
-                        {filteredLessons.map((lesson) => {
-                          const isSorted = sortState?.lessonId === lesson.id;
-                          const sortOrder = isSorted ? sortState.order : null;
-                          
-                          return (
-                            <th
-                              key={lesson.id}
-                              className={cn(
-                                "text-center p-2 font-semibold min-w-[90px] whitespace-nowrap text-xs relative group cursor-pointer select-none",
-                                isSorted && "bg-accent/50"
-                              )}
-                              onClick={() => handleColumnClick(lesson.id)}
-                            >
-                              <div className="flex items-center justify-center gap-1">
-                                <span>{format(new Date(lesson.lesson_date), "dd/MM/yyyy", { locale: he })}</span>
-                                {sortOrder && (
-                                  <span className="text-xs text-muted-foreground">
-                                    {sortOrder === 'asc' ? '↑' : '↓'}
-                                  </span>
-                                )}
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                    <button
-                                      type="button"
-                                      className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-accent rounded"
-                                      onClick={(e) => e.stopPropagation()}
-                                    >
-                                      <MoreVertical className="h-3 w-3" />
-                                    </button>
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent align="end" dir="rtl">
-                                    <DropdownMenuItem
-                                      onClick={() => handleEditLesson(lesson)}
-                                    >
-                                      <Edit className="ml-2 h-4 w-4" />
-                                      ערוך
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem
-                                      onClick={() => handleDeleteLesson(lesson.id, lesson.lesson_date)}
-                                      className="text-destructive focus:text-destructive"
-                                    >
-                                      <Trash2 className="ml-2 h-4 w-4" />
-                                      מחק
-                                    </DropdownMenuItem>
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
-                              </div>
-                            </th>
-                          );
-                        })}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {sortedStudents.map((student) => (
-                          <tr
-                            key={student.id}
-                            className="border-b hover:bg-accent/30 transition-colors"
-                          >
-                            <td className="text-right p-2 font-medium sticky right-0 bg-background z-10 border-r">
-                              <span className="text-sm">{student.name}</span>
-                            </td>
-                            {filteredLessons.map((lesson) => {
-                              const key = `${lesson.id}-${student.id}`;
-                              const record = attendanceMap[key];
-                              const attended = record?.attended || false;
-                              const note = record?.note || "";
-                              const hasNote = note && note.trim().length > 0;
+                <Card>
+                  <CardHeader>
+                    <CardTitle>נוכחות תלמידים</CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    <div className="overflow-x-auto">
+                      <div className="max-h-[600px] overflow-y-auto">
+                        <table className="w-full border-collapse">
+                          <thead className="sticky top-0 bg-background z-20">
+                            <tr className="border-b bg-accent/30">
+                              <th className="text-right p-2 font-semibold sticky right-0 bg-background z-30 border-r min-w-[100px]">
+                                תלמיד
+                              </th>
+                              {filteredLessons.map((lesson) => {
+                                const isSorted = sortState?.lessonId === lesson.id;
+                                const sortOrder = isSorted ? sortState.order : null;
 
-                              return (
-                                <td key={lesson.id} className="p-2">
-                                  <div className="flex items-center justify-center gap-1.5">
-                                    <Checkbox
-                                      checked={attended}
-                                      onCheckedChange={(checked) =>
-                                        handleAttendanceChange(
-                                          lesson.id,
-                                          student.id,
-                                          checked === true
-                                        )
-                                      }
-                                      className="h-4 w-4"
-                                    />
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        handleOpenNoteModal(
-                                          lesson.id,
-                                          student.id,
-                                          student.name,
-                                          lesson.lesson_date
-                                        )
-                                      }
-                                      className={cn(
-                                        "p-1 rounded-md transition-colors",
-                                        hasNote
-                                          ? "text-primary hover:bg-primary/10"
-                                          : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                                return (
+                                  <th
+                                    key={lesson.id}
+                                    className={cn(
+                                      "text-center p-2 font-semibold min-w-[90px] whitespace-nowrap text-xs relative group cursor-pointer select-none",
+                                      isSorted && "bg-accent/50"
+                                    )}
+                                    onClick={() => handleColumnClick(lesson.id)}
+                                  >
+                                    <div className="flex items-center justify-center gap-1">
+                                      <span>{format(new Date(lesson.lesson_date), "dd/MM/yyyy", { locale: he })}</span>
+                                      {sortOrder && (
+                                        <span className="text-xs text-muted-foreground">
+                                          {sortOrder === 'asc' ? '↑' : '↓'}
+                                        </span>
                                       )}
-                                      title={hasNote ? "ערוך הערה" : "הוסף הערה"}
-                                    >
-                                      {hasNote ? (
-                                        <MessageSquare className="h-3.5 w-3.5 fill-primary text-primary" />
-                                      ) : (
-                                        <StickyNote className="h-3.5 w-3.5" />
-                                      )}
-                                    </button>
-                                  </div>
+                                      <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                          <button
+                                            type="button"
+                                            className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-accent rounded"
+                                            onClick={(e) => e.stopPropagation()}
+                                          >
+                                            <MoreVertical className="h-3 w-3" />
+                                          </button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align="end" dir="rtl">
+                                          <DropdownMenuItem
+                                            onClick={() => handleEditLesson(lesson)}
+                                          >
+                                            <Edit className="ml-2 h-4 w-4" />
+                                            ערוך
+                                          </DropdownMenuItem>
+                                          <DropdownMenuItem
+                                            onClick={() => handleDeleteLesson(lesson.id, lesson.lesson_date)}
+                                            className="text-destructive focus:text-destructive"
+                                          >
+                                            <Trash2 className="ml-2 h-4 w-4" />
+                                            מחק
+                                          </DropdownMenuItem>
+                                        </DropdownMenuContent>
+                                      </DropdownMenu>
+                                    </div>
+                                  </th>
+                                );
+                              })}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {sortedStudents.map((student) => (
+                              <tr
+                                key={student.id}
+                                className="border-b hover:bg-accent/30 transition-colors"
+                              >
+                                <td className="text-right p-2 font-medium sticky right-0 bg-background z-10 border-r">
+                                  <span className="text-sm">{student.name}</span>
                                 </td>
-                              );
-                            })}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+                                {filteredLessons.map((lesson) => {
+                                  const key = `${lesson.id}-${student.id}`;
+                                  const record = attendanceMap[key];
+                                  const attended = record?.attended || false;
+                                  const note = record?.note || "";
+                                  const hasNote = note && note.trim().length > 0;
+
+                                  return (
+                                    <td key={lesson.id} className="p-2">
+                                      <div className="flex items-center justify-center gap-1.5">
+                                        <Checkbox
+                                          checked={attended}
+                                          onCheckedChange={(checked) =>
+                                            handleAttendanceChange(
+                                              lesson.id,
+                                              student.id,
+                                              checked === true
+                                            )
+                                          }
+                                          className="h-4 w-4"
+                                        />
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            handleOpenNoteModal(
+                                              lesson.id,
+                                              student.id,
+                                              student.name,
+                                              lesson.lesson_date
+                                            )
+                                          }
+                                          className={cn(
+                                            "p-1 rounded-md transition-colors",
+                                            hasNote
+                                              ? "text-primary hover:bg-primary/10"
+                                              : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                                          )}
+                                          title={hasNote ? "ערוך הערה" : "הוסף הערה"}
+                                        >
+                                          {hasNote ? (
+                                            <MessageSquare className="h-3.5 w-3.5 fill-primary text-primary" />
+                                          ) : (
+                                            <StickyNote className="h-3.5 w-3.5" />
+                                          )}
+                                        </button>
+                                      </div>
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
               )}
             </TabsContent>
 
@@ -830,65 +830,65 @@ const Attendance = () => {
                               fontFamily: "inherit",
                             },
                           },
-                        plotOptions: {
-                          line: {
-                            dataLabels: {
-                              enabled: true,
+                          plotOptions: {
+                            line: {
+                              dataLabels: {
+                                enabled: true,
+                              },
+                              enableMouseTracking: true,
                             },
-                            enableMouseTracking: true,
-                          },
-                          series: {
-                            point: {
-                              events: {
-                                click: function (this: any) {
-                                  const dateIndex = this.x;
-                                  const lesson = filteredLessons[dateIndex];
-                                  if (lesson) {
-                                    setSelectedChartDateData({
-                                      date: lesson.lesson_date,
-                                      lessonId: lesson.id,
-                                    });
-                                    setChartDateModalOpen(true);
-                                  }
+                            series: {
+                              point: {
+                                events: {
+                                  click: function (this: any) {
+                                    const dateIndex = this.x;
+                                    const lesson = filteredLessons[dateIndex];
+                                    if (lesson) {
+                                      setSelectedChartDateData({
+                                        date: lesson.lesson_date,
+                                        lessonId: lesson.id,
+                                      });
+                                      setChartDateModalOpen(true);
+                                    }
+                                  },
                                 },
                               },
                             },
                           },
-                        },
-                        tooltip: {
-                          shared: true,
-                          useHTML: true,
-                          formatter: function (this: any) {
-                            const dateIndex = this.x;
-                            const lesson = filteredLessons[dateIndex];
-                            if (!lesson) return "";
-                            
-                            const date = format(new Date(lesson.lesson_date), "dd/MM/yyyy", { locale: he });
-                            let tooltip = `<div dir="rtl"><b>${date}</b><br/>`;
-                            
-                            this.points?.forEach((point: any) => {
-                              tooltip += `${point.series.name}: <b>${point.y}</b><br/>`;
-                            });
-                            
-                            tooltip += "</div>";
-                            return tooltip;
+                          tooltip: {
+                            shared: true,
+                            useHTML: true,
+                            formatter: function (this: any) {
+                              const dateIndex = this.x;
+                              const lesson = filteredLessons[dateIndex];
+                              if (!lesson) return "";
+
+                              const date = format(new Date(lesson.lesson_date), "dd/MM/yyyy", { locale: he });
+                              let tooltip = `<div dir="rtl"><b>${date}</b><br/>`;
+
+                              this.points?.forEach((point: any) => {
+                                tooltip += `${point.series.name}: <b>${point.y}</b><br/>`;
+                              });
+
+                              tooltip += "</div>";
+                              return tooltip;
+                            },
                           },
-                        },
-                        lang: {
-                          loading: "טוען...",
-                          months: ["ינואר", "פברואר", "מרץ", "אפריל", "מאי", "יוני", "יולי", "אוגוסט", "ספטמבר", "אוקטובר", "נובמבר", "דצמבר"],
-                          weekdays: ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"],
-                          shortMonths: ["ינו", "פבר", "מרץ", "אפר", "מאי", "יונ", "יול", "אוג", "ספט", "אוק", "נוב", "דצמ"],
-                          rangeSelectorFrom: "מ",
-                          rangeSelectorTo: "עד",
-                          rangeSelectorZoom: "זום",
-                          downloadPNG: "הורד PNG",
-                          downloadJPEG: "הורד JPEG",
-                          downloadPDF: "הורד PDF",
-                          downloadSVG: "הורד SVG",
-                          printChart: "הדפס גרף",
-                        },
-                      }}
+                          lang: {
+                            loading: "טוען...",
+                            months: ["ינואר", "פברואר", "מרץ", "אפריל", "מאי", "יוני", "יולי", "אוגוסט", "ספטמבר", "אוקטובר", "נובמבר", "דצמבר"],
+                            weekdays: ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"],
+                            shortMonths: ["ינו", "פבר", "מרץ", "אפר", "מאי", "יונ", "יול", "אוג", "ספט", "אוק", "נוב", "דצמ"],
+                            rangeSelectorFrom: "מ",
+                            rangeSelectorTo: "עד",
+                            rangeSelectorZoom: "זום",
+                            downloadPNG: "הורד PNG",
+                            downloadJPEG: "הורד JPEG",
+                            downloadPDF: "הורד PDF",
+                            downloadSVG: "הורד SVG",
+                            printChart: "הדפס גרף",
+                          },
+                        }}
                       />
                     </div>
                   </CardContent>
@@ -1001,11 +1001,11 @@ const Attendance = () => {
         }
       }}>
         <DialogContent className="sm:max-w-[600px]" dir="rtl">
-          <DialogHeader className="text-right">
-            <DialogTitle>
+          <DialogHeader className="text-right ">
+            <DialogTitle className="text-right">
               פרטי נוכחות - {selectedChartDateData && format(new Date(selectedChartDateData.date), "dd/MM/yyyy", { locale: he })}
             </DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="text-right">
               רשימת כל התלמידים והסטטוס שלהם בתאריך זה
             </DialogDescription>
           </DialogHeader>
