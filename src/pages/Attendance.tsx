@@ -30,7 +30,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, LogOut, StickyNote, MessageSquare, MoreVertical, Edit, Trash2, RefreshCw, Save, Calendar } from "lucide-react";
-import { format, subMonths } from "date-fns";
+import { format, subMonths, addMonths } from "date-fns";
 import { he } from "date-fns/locale/he";
 import { cn } from "@/lib/utils";
 import Footer from "@/components/Footer";
@@ -57,7 +57,7 @@ const Attendance = () => {
 
   const [newLessonDate, setNewLessonDate] = useState<Date | null>(new Date());
   const [startDate, setStartDate] = useState<Date | null>(subMonths(new Date(), 2));
-  const [endDate, setEndDate] = useState<Date | null>(new Date());
+  const [endDate, setEndDate] = useState<Date | null>(addMonths(new Date(), 2));
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
   const [studentFilterValue, setStudentFilterValue] = useState("");
   const [cohortFilterValue, setCohortFilterValue] = useState("");
