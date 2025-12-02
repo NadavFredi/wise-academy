@@ -24,7 +24,6 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -53,6 +52,7 @@ const Attendance = () => {
   const [endDate, setEndDate] = useState<Date | null>(new Date());
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
   const [studentFilterValue, setStudentFilterValue] = useState("");
+  const [cohortFilterValue, setCohortFilterValue] = useState("");
   const [activeTab, setActiveTab] = useState("data");
   const [chartDateModalOpen, setChartDateModalOpen] = useState(false);
   const [selectedChartDateData, setSelectedChartDateData] = useState<{
@@ -110,6 +110,21 @@ const Attendance = () => {
       return;
     }
   }, [isAuthenticated, navigate]);
+
+  // Sync cohort filter value with selected cohort
+  useEffect(() => {
+    if (selectedCohortId && cohorts.length > 0) {
+      const selectedCohort = cohorts.find((c) => c.customobject1004id === selectedCohortId);
+      if (selectedCohort) {
+        const displayName = selectedCohort.pcfCoursename
+          ? `${selectedCohort.name} - ${selectedCohort.pcfCoursename}`
+          : selectedCohort.name;
+        setCohortFilterValue(displayName);
+      }
+    } else if (!selectedCohortId) {
+      setCohortFilterValue("");
+    }
+  }, [selectedCohortId, cohorts]);
 
   // Create attendance map
   const attendanceMap = useMemo(() => {
@@ -292,6 +307,38 @@ const Attendance = () => {
 
   const handleRemoveStudent = (studentId: string) => {
     setSelectedStudentIds(selectedStudentIds.filter((id) => id !== studentId));
+  };
+
+  // Helper function to get cohort display name
+  const getCohortDisplayName = (cohort: { name: string; pcfCoursename: string }) => {
+    return cohort.pcfCoursename
+      ? `${cohort.name} - ${cohort.pcfCoursename}`
+      : cohort.name;
+  };
+
+  // Cohort filter search function
+  const cohortSearchFn = async (searchTerm: string): Promise<string[]> => {
+    if (!cohorts || cohorts.length === 0) {
+      return [];
+    }
+    if (!searchTerm) {
+      return cohorts.map((c) => getCohortDisplayName(c));
+    }
+    const searchLower = searchTerm.toLowerCase();
+    return cohorts
+      .filter((c) => {
+        const displayName = getCohortDisplayName(c);
+        return displayName.toLowerCase().includes(searchLower);
+      })
+      .map((c) => getCohortDisplayName(c));
+  };
+
+  const handleCohortSelect = (cohortDisplayName: string) => {
+    const cohort = cohorts.find((c) => getCohortDisplayName(c) === cohortDisplayName);
+    if (cohort) {
+      dispatch(setSelectedCohort(cohort.customobject1004id));
+      setCohortFilterValue(cohortDisplayName);
+    }
   };
 
   const handleColumnClick = (lessonId: string) => {
@@ -513,22 +560,17 @@ const Attendance = () => {
                 <CardTitle className="text-base">בחירת מחזור</CardTitle>
               </CardHeader>
               <CardContent>
-                <Select
-                  value={selectedCohortId || ""}
-                  onValueChange={(value) => dispatch(setSelectedCohort(value))}
-                  disabled={cohortsLoading}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder={cohortsLoading ? "טוען..." : "בחר מחזור"} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {cohorts.map((cohort) => (
-                      <SelectItem key={cohort.customobject1004id} value={cohort.customobject1004id}>
-                        {cohort.name} {cohort.pcfCoursename ? `- ${cohort.pcfCoursename}` : ''}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <AutocompleteFilter
+                  value={cohortFilterValue}
+                  onChange={setCohortFilterValue}
+                  onSelect={handleCohortSelect}
+                  placeholder={cohortsLoading ? "טוען..." : "חפש מחזור..."}
+                  searchFn={cohortSearchFn}
+                  minSearchLength={0}
+                  autoSearchOnFocus={true}
+                  initialLoadOnMount={true}
+                  initialResultsLimit={10}
+                />
               </CardContent>
             </Card>
 
