@@ -29,7 +29,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, LogOut, StickyNote, MessageSquare, MoreVertical, Edit, Trash2 } from "lucide-react";
-import { format } from "date-fns";
+import { format, subMonths } from "date-fns";
 import { he } from "date-fns/locale/he";
 import { cn } from "@/lib/utils";
 import Footer from "@/components/Footer";
@@ -48,8 +48,8 @@ const Attendance = () => {
   const { selectedCohortId, selectedDates } = useAppSelector((state) => state.attendance);
 
   const [newLessonDate, setNewLessonDate] = useState<Date | null>(new Date());
-  const [startDate, setStartDate] = useState<Date | null>(null);
-  const [endDate, setEndDate] = useState<Date | null>(null);
+  const [startDate, setStartDate] = useState<Date | null>(subMonths(new Date(), 2));
+  const [endDate, setEndDate] = useState<Date | null>(new Date());
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
   const [studentFilterValue, setStudentFilterValue] = useState("");
   const [activeTab, setActiveTab] = useState("data");
@@ -483,7 +483,7 @@ const Attendance = () => {
     <div className="min-h-screen bg-background flex flex-col" dir="rtl">
       <div className="flex-1">
         <div className="border-b bg-background/80 backdrop-blur-md">
-          <div className="container mx-auto px-6 py-4">
+          <div className="w-full mx-auto px-6 py-4 max-w-[1920px]">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
                 <img
@@ -501,7 +501,7 @@ const Attendance = () => {
           </div>
         </div>
 
-        <div className="container mx-auto px-6 py-6">
+        <div className="w-full mx-auto px-6 py-6 max-w-[1920px]">
           {/* Four Cards in One Row */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
             {/* Cohort Selection */}
@@ -559,21 +559,21 @@ const Attendance = () => {
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <Label htmlFor="start-date" className="text-sm">מתאריך</Label>
+                  <div className="grid grid-cols-2 gap-3 items-end">
+                    <div className="flex flex-col">
+                      <Label htmlFor="start-date" className="text-sm mb-1">מתאריך</Label>
                       <DatePickerInput
                         value={startDate}
                         onChange={setStartDate}
-                        wrapperClassName="mt-1"
+                        wrapperClassName="w-full"
                       />
                     </div>
-                    <div>
-                      <Label htmlFor="end-date" className="text-sm">עד תאריך</Label>
+                    <div className="flex flex-col">
+                      <Label htmlFor="end-date" className="text-sm mb-1">עד תאריך</Label>
                       <DatePickerInput
                         value={endDate}
                         onChange={setEndDate}
-                        wrapperClassName="mt-1"
+                        wrapperClassName="w-full"
                       />
                     </div>
                   </div>
