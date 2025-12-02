@@ -40,6 +40,7 @@ interface FireberryQueryResponse {
 interface FireberryQueryRequest {
   page_size: number;
   page_number: number;
+  query?: string;
   objecttype: number;
 }
 
@@ -69,6 +70,7 @@ export const cohortsApi = createApi({
         body: {
           page_size: 50,
           page_number: 1,
+          query: "pcfShouldShowOnAttendanceSystem = 1",
           objecttype: 1004,
         } as FireberryQueryRequest,
       }),
