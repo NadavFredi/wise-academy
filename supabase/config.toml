@@ -114,3 +114,8 @@ entrypoint = "./functions/send-bulk-messages/index.ts"
 enabled = true
 verify_jwt = true
 entrypoint = "./functions/get-attendance/index.ts"
+
+[functions.fireberry-proxy]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/fireberry-proxy/index.ts"

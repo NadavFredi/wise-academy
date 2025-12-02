@@ -18,6 +18,7 @@ import {
   useUpdateAttendanceMutation,
   type Lesson,
 } from "@/store/api/attendanceApi";
+import { useCohorts } from "@/store/api/cohortsApi";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -95,6 +96,8 @@ const Attendance = () => {
     lessonIds,
     { skip: lessonIds.length === 0 }
   );
+
+  const { cohorts, isLoading: cohortsLoading } = useCohorts();
 
   const [createLesson, { isLoading: creatingLesson }] = useCreateLessonMutation();
   const [updateLesson] = useUpdateLessonMutation();
@@ -513,14 +516,17 @@ const Attendance = () => {
                 <Select
                   value={selectedCohortId || ""}
                   onValueChange={(value) => dispatch(setSelectedCohort(value))}
+                  disabled={cohortsLoading}
                 >
                   <SelectTrigger className="w-full">
-                    <SelectValue placeholder="בחר Cohort" />
+                    <SelectValue placeholder={cohortsLoading ? "טוען..." : "בחר מחזור"} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="00000000-0000-0000-0000-000000000001">
-                      Cohort 1
-                    </SelectItem>
+                    {cohorts.map((cohort) => (
+                      <SelectItem key={cohort.customobject1004id} value={cohort.customobject1004id}>
+                        {cohort.name} {cohort.pcfCoursename ? `- ${cohort.pcfCoursename}` : ''}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </CardContent>
