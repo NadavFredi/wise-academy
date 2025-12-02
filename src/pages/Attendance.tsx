@@ -1,114 +1,108 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/lib/supabase";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import { logout } from "@/store/slices/authSlice";
+import {
+  setSelectedCohort,
+  setSelectedDates,
+  toggleDate,
+  clearSelectedDates,
+} from "@/store/slices/attendanceSlice";
+import {
+  useGetStudentsQuery,
+  useGetLessonsQuery,
+  useGetAttendanceQuery,
+  useCreateLessonMutation,
+  useUpdateAttendanceMutation,
+} from "@/store/api/attendanceApi";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Calendar, Plus, LogOut, Filter } from "lucide-react";
+import { Plus, LogOut } from "lucide-react";
 import { format } from "date-fns";
 import { he } from "date-fns/locale/he";
 import Footer from "@/components/Footer";
-
-interface Student {
-  id: string;
-  name: string;
-}
-
-interface Lesson {
-  id: string;
-  lesson_date: string;
-}
-
-interface AttendanceRecord {
-  id?: string;
-  lesson_id: string;
-  student_id: string;
-  attended: boolean;
-  note: string;
-}
+import { DatePickerInput } from "@/components/DatePickerInput";
+import { AutocompleteFilter } from "@/components/AutocompleteFilter";
 
 const Attendance = () => {
   const navigate = useNavigate();
+  const dispatch = useAppDispatch();
   const { toast } = useToast();
-  const [cohortId, setCohortId] = useState<string>("00000000-0000-0000-0000-000000000001");
-  const [students, setStudents] = useState<Student[]>([]);
-  const [lessons, setLessons] = useState<Lesson[]>([]);
-  const [selectedDates, setSelectedDates] = useState<string[]>([]);
-  const [attendance, setAttendance] = useState<Record<string, AttendanceRecord>>({});
-  const [newLessonDate, setNewLessonDate] = useState("");
-  const [loading, setLoading] = useState(false);
+  
+  const { isAuthenticated } = useAppSelector((state) => state.auth);
+  const { selectedCohortId, selectedDates } = useAppSelector((state) => state.attendance);
+  
+  const [newLessonDate, setNewLessonDate] = useState<Date | null>(null);
+  const [dateFilterValue, setDateFilterValue] = useState("");
+
+  // RTK Query hooks
+  const { data: students = [], isLoading: studentsLoading } = useGetStudentsQuery(
+    selectedCohortId || "",
+    { skip: !selectedCohortId }
+  );
+  
+  const { data: lessons = [], isLoading: lessonsLoading } = useGetLessonsQuery(
+    selectedCohortId || "",
+    { skip: !selectedCohortId }
+  );
+
+  const lessonIds = useMemo(() => lessons.map((l) => l.id), [lessons]);
+  const { data: attendanceRecords = [], isLoading: attendanceLoading } = useGetAttendanceQuery(
+    lessonIds,
+    { skip: lessonIds.length === 0 }
+  );
+
+  const [createLesson, { isLoading: creatingLesson }] = useCreateLessonMutation();
+  const [updateAttendance] = useUpdateAttendanceMutation();
 
   useEffect(() => {
-    // Check authentication
-    const session = localStorage.getItem("admin_session");
-    if (!session) {
+    if (!isAuthenticated) {
       navigate("/login");
       return;
     }
+  }, [isAuthenticated, navigate]);
 
-    loadData();
-  }, [cohortId, navigate]);
+  // Create attendance map
+  const attendanceMap = useMemo(() => {
+    const map: Record<string, { attended: boolean; note: string }> = {};
+    attendanceRecords.forEach((record) => {
+      const key = `${record.lesson_id}-${record.student_id}`;
+      map[key] = {
+        attended: record.attended,
+        note: record.note || "",
+      };
+    });
+    return map;
+  }, [attendanceRecords]);
 
-  const loadData = async () => {
-    setLoading(true);
-    try {
-      // Load students
-      const { data: studentsData, error: studentsError } = await supabase
-        .from("students")
-        .select("*")
-        .eq("cohort_id", cohortId)
-        .order("name");
+  // Filter lessons by selected dates
+  const filteredLessons = useMemo(() => {
+    if (selectedDates.length === 0) return lessons;
+    return lessons.filter((lesson) => selectedDates.includes(lesson.lesson_date));
+  }, [lessons, selectedDates]);
 
-      if (studentsError) throw studentsError;
-      setStudents(studentsData || []);
-
-      // Load lessons
-      const { data: lessonsData, error: lessonsError } = await supabase
-        .from("lessons")
-        .select("*")
-        .eq("cohort_id", cohortId)
-        .order("lesson_date", { ascending: false });
-
-      if (lessonsError) throw lessonsError;
-      setLessons(lessonsData || []);
-
-      // Load attendance records
-      if (lessonsData && lessonsData.length > 0) {
-        const lessonIds = lessonsData.map((l) => l.id);
-        const { data: attendanceData, error: attendanceError } = await supabase
-          .from("attendance")
-          .select("*")
-          .in("lesson_id", lessonIds);
-
-        if (attendanceError) throw attendanceError;
-
-        // Create attendance map: "lesson_id-student_id" -> attendance record
-        const attendanceMap: Record<string, AttendanceRecord> = {};
-        (attendanceData || []).forEach((record) => {
-          const key = `${record.lesson_id}-${record.student_id}`;
-          attendanceMap[key] = record;
-        });
-        setAttendance(attendanceMap);
-      }
-    } catch (error) {
-      console.error("Error loading data:", error);
-      toast({
-        title: "שגיאה",
-        description: "אירעה שגיאה בטעינת הנתונים",
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
+  // Date filter search function
+  const dateSearchFn = async (searchTerm: string): Promise<string[]> => {
+    if (!searchTerm) {
+      return lessons.map((l) => format(new Date(l.lesson_date), "dd/MM/yyyy", { locale: he }));
     }
+    const searchLower = searchTerm.toLowerCase();
+    return lessons
+      .map((l) => ({
+        date: l.lesson_date,
+        formatted: format(new Date(l.lesson_date), "dd/MM/yyyy", { locale: he }),
+      }))
+      .filter((item) => item.formatted.includes(searchLower))
+      .map((item) => item.formatted);
   };
 
   const handleCreateLesson = async () => {
-    if (!newLessonDate) {
+    if (!newLessonDate || !selectedCohortId) {
       toast({
         title: "שגיאה",
         description: "אנא בחר תאריך",
@@ -118,26 +112,19 @@ const Attendance = () => {
     }
 
     try {
-      const { data, error } = await supabase
-        .from("lessons")
-        .insert({
-          cohort_id: cohortId,
-          lesson_date: newLessonDate,
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
+      const dateString = format(newLessonDate, "yyyy-MM-dd");
+      await createLesson({
+        cohortId: selectedCohortId,
+        lessonDate: dateString,
+      }).unwrap();
 
       toast({
         title: "הצלחה",
         description: "שיעור חדש נוצר בהצלחה",
       });
 
-      setNewLessonDate("");
-      await loadData();
+      setNewLessonDate(null);
     } catch (error: any) {
-      console.error("Error creating lesson:", error);
       toast({
         title: "שגיאה",
         description: error.message || "אירעה שגיאה ביצירת השיעור",
@@ -151,45 +138,13 @@ const Attendance = () => {
     studentId: string,
     attended: boolean
   ) => {
-    const key = `${lessonId}-${studentId}`;
-    const existing = attendance[key];
-
     try {
-      if (existing?.id) {
-        // Update existing
-        const { error } = await supabase
-          .from("attendance")
-          .update({ attended, updated_at: new Date().toISOString() })
-          .eq("id", existing.id);
-
-        if (error) throw error;
-      } else {
-        // Create new
-        const { data, error } = await supabase
-          .from("attendance")
-          .insert({
-            lesson_id: lessonId,
-            student_id: studentId,
-            attended,
-          })
-          .select()
-          .single();
-
-        if (error) throw error;
-        setAttendance((prev) => ({
-          ...prev,
-          [key]: data,
-        }));
-        return;
-      }
-
-      // Update local state
-      setAttendance((prev) => ({
-        ...prev,
-        [key]: { ...existing, attended },
-      }));
+      await updateAttendance({
+        lessonId,
+        studentId,
+        attended,
+      }).unwrap();
     } catch (error) {
-      console.error("Error updating attendance:", error);
       toast({
         title: "שגיאה",
         description: "אירעה שגיאה בעדכון הנוכחות",
@@ -203,54 +158,38 @@ const Attendance = () => {
     studentId: string,
     note: string
   ) => {
-    const key = `${lessonId}-${studentId}`;
-    const existing = attendance[key];
-
     try {
-      if (existing?.id) {
-        const { error } = await supabase
-          .from("attendance")
-          .update({ note, updated_at: new Date().toISOString() })
-          .eq("id", existing.id);
-
-        if (error) throw error;
-      } else {
-        const { data, error } = await supabase
-          .from("attendance")
-          .insert({
-            lesson_id: lessonId,
-            student_id: studentId,
-            attended: false,
-            note,
-          })
-          .select()
-          .single();
-
-        if (error) throw error;
-        setAttendance((prev) => ({
-          ...prev,
-          [key]: data,
-        }));
-        return;
-      }
-
-      setAttendance((prev) => ({
-        ...prev,
-        [key]: { ...existing, note },
-      }));
+      const key = `${lessonId}-${studentId}`;
+      const current = attendanceMap[key];
+      await updateAttendance({
+        lessonId,
+        studentId,
+        attended: current?.attended || false,
+        note,
+      }).unwrap();
     } catch (error) {
       console.error("Error updating note:", error);
     }
   };
 
   const handleLogout = () => {
-    localStorage.removeItem("admin_session");
+    dispatch(logout());
     navigate("/login");
   };
 
-  const filteredLessons = selectedDates.length > 0
-    ? lessons.filter((lesson) => selectedDates.includes(lesson.lesson_date))
-    : lessons;
+  const handleDateSelect = (formattedDate: string) => {
+    // Find the lesson date that matches the formatted date
+    const lesson = lessons.find((l) => {
+      const formatted = format(new Date(l.lesson_date), "dd/MM/yyyy", { locale: he });
+      return formatted === formattedDate;
+    });
+    if (lesson) {
+      dispatch(toggleDate(lesson.lesson_date));
+      setDateFilterValue("");
+    }
+  };
+
+  const loading = studentsLoading || lessonsLoading || attendanceLoading;
 
   return (
     <div className="min-h-screen bg-background flex flex-col" dir="rtl">
@@ -274,7 +213,10 @@ const Attendance = () => {
               <CardTitle>בחירת Cohort</CardTitle>
             </CardHeader>
             <CardContent>
-              <Select value={cohortId} onValueChange={setCohortId}>
+              <Select
+                value={selectedCohortId || ""}
+                onValueChange={(value) => dispatch(setSelectedCohort(value))}
+              >
                 <SelectTrigger className="w-full md:w-[300px]">
                   <SelectValue placeholder="בחר Cohort" />
                 </SelectTrigger>
@@ -299,16 +241,15 @@ const Attendance = () => {
               <div className="flex flex-col md:flex-row gap-4">
                 <div className="flex-1">
                   <Label htmlFor="lesson-date">תאריך השיעור</Label>
-                  <Input
-                    id="lesson-date"
-                    type="date"
+                  <DatePickerInput
                     value={newLessonDate}
-                    onChange={(e) => setNewLessonDate(e.target.value)}
+                    onChange={setNewLessonDate}
+                    wrapperClassName="mt-1"
                   />
                 </div>
                 <div className="flex items-end">
-                  <Button onClick={handleCreateLesson}>
-                    <Calendar className="ml-2 h-4 w-4" />
+                  <Button onClick={handleCreateLesson} disabled={creatingLesson}>
+                    <Plus className="ml-2 h-4 w-4" />
                     צור שיעור
                   </Button>
                 </div>
@@ -316,42 +257,49 @@ const Attendance = () => {
             </CardContent>
           </Card>
 
-          {/* Date Filter */}
+          {/* Date Filter with Autocomplete */}
           {lessons.length > 0 && (
             <Card className="mb-6">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Filter className="h-5 w-5" />
-                  סינון תאריכים
-                </CardTitle>
+                <CardTitle>סינון תאריכים</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="flex flex-wrap gap-2">
-                  {lessons.map((lesson) => (
-                    <Button
-                      key={lesson.id}
-                      variant={selectedDates.includes(lesson.lesson_date) ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => {
-                        setSelectedDates((prev) =>
-                          prev.includes(lesson.lesson_date)
-                            ? prev.filter((d) => d !== lesson.lesson_date)
-                            : [...prev, lesson.lesson_date]
-                        );
-                      }}
-                    >
-                      {format(new Date(lesson.lesson_date), "dd/MM/yyyy", { locale: he })}
-                    </Button>
-                  ))}
-                  {selectedDates.length > 0 && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setSelectedDates([])}
-                    >
-                      נקה סינון
-                    </Button>
-                  )}
+                <div className="space-y-4">
+                  <AutocompleteFilter
+                    value={dateFilterValue}
+                    onChange={setDateFilterValue}
+                    onSelect={handleDateSelect}
+                    placeholder="חפש תאריך..."
+                    searchFn={dateSearchFn}
+                    minSearchLength={0}
+                    autoSearchOnFocus={true}
+                    initialLoadOnMount={true}
+                    initialResultsLimit={10}
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    {lessons.map((lesson) => {
+                      const isSelected = selectedDates.includes(lesson.lesson_date);
+                      return (
+                        <Button
+                          key={lesson.id}
+                          variant={isSelected ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => dispatch(toggleDate(lesson.lesson_date))}
+                        >
+                          {format(new Date(lesson.lesson_date), "dd/MM/yyyy", { locale: he })}
+                        </Button>
+                      );
+                    })}
+                    {selectedDates.length > 0 && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => dispatch(clearSelectedDates())}
+                      >
+                        נקה סינון
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -391,13 +339,16 @@ const Attendance = () => {
                     </thead>
                     <tbody>
                       {students.map((student) => (
-                        <tr key={student.id} className="border-b hover:bg-accent/30 transition-colors">
+                        <tr
+                          key={student.id}
+                          className="border-b hover:bg-accent/30 transition-colors"
+                        >
                           <td className="text-right p-4 font-medium sticky right-0 bg-background z-10 border-r">
                             {student.name}
                           </td>
                           {filteredLessons.map((lesson) => {
                             const key = `${lesson.id}-${student.id}`;
-                            const record = attendance[key];
+                            const record = attendanceMap[key];
                             const attended = record?.attended || false;
                             const note = record?.note || "";
 
@@ -452,4 +403,3 @@ const Attendance = () => {
 };
 
 export default Attendance;
-
