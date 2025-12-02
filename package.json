@@ -9,7 +9,7 @@
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview",
-    "linkProject": "supabase link --project-ref khxxkbrsbvbpmnlagvqu",
+    "linkProject": "supabase link --project-ref yjexxepyodohgifzwjnw",
     "db:reset": "supabase db reset --local",
     "deploy:functions": "node scripts/deploy-functions.js",
     "functions:local": "supabase functions serve --env-file .env.local"
