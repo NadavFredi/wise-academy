@@ -91,8 +91,7 @@ const Attendance = () => {
   const [cohortFilterRefreshKey, setCohortFilterRefreshKey] = useState(0);
   const justSyncedRef = useRef(false);
   const [multipleLessonsModalOpen, setMultipleLessonsModalOpen] = useState(false);
-  const [multipleLessonDates, setMultipleLessonDates] = useState<Date[]>([]);
-  const [newDateToAdd, setNewDateToAdd] = useState<Date | null>(new Date());
+  const [multipleLessonDates, setMultipleLessonDates] = useState<(Date | null)[]>([]);
 
   // Local state for pending attendance changes
   const [pendingAttendanceChanges, setPendingAttendanceChanges] = useState<
@@ -554,38 +553,35 @@ const Attendance = () => {
 
       setNewLessonDate(null);
     } catch (error: any) {
+      // Check if it's a duplicate key error
+      const isDuplicateError =
+        error?.code === '23505' ||
+        error?.message?.includes('duplicate key') ||
+        error?.message?.includes('lessons_cohort_id_lesson_date_key') ||
+        error?.details?.includes('lessons_cohort_id_lesson_date_key');
+
       toast({
         title: "שגיאה",
-        description: error.message || "אירעה שגיאה ביצירת השיעור",
+        description: isDuplicateError
+          ? "השיעור כבר קיים במערכת"
+          : (error.message || "אירעה שגיאה ביצירת השיעור"),
         variant: "destructive",
       });
     }
   };
 
-  const handleAddDateToMultiple = () => {
-    if (!newDateToAdd) return;
-
-    // Check if date already exists
-    const dateString = format(newDateToAdd, "yyyy-MM-dd");
-    const alreadyExists = multipleLessonDates.some(
-      date => format(date, "yyyy-MM-dd") === dateString
-    );
-
-    if (alreadyExists) {
-      toast({
-        title: "תאריך כבר קיים",
-        description: "התאריך כבר נוסף לרשימה",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setMultipleLessonDates([...multipleLessonDates, newDateToAdd].sort((a, b) => a.getTime() - b.getTime()));
-    setNewDateToAdd(new Date());
+  const handleAddRow = () => {
+    setMultipleLessonDates([...multipleLessonDates, null]);
   };
 
   const handleRemoveDateFromMultiple = (index: number) => {
     setMultipleLessonDates(multipleLessonDates.filter((_, i) => i !== index));
+  };
+
+  const handleUpdateDateInMultiple = (index: number, date: Date | null) => {
+    const updatedDates = [...multipleLessonDates];
+    updatedDates[index] = date;
+    setMultipleLessonDates(updatedDates);
   };
 
   const handleCreateMultipleLessons = async () => {
@@ -598,30 +594,44 @@ const Attendance = () => {
       return;
     }
 
-    if (multipleLessonDates.length === 0) {
+    const validDates = multipleLessonDates.filter(date => date !== null) as Date[];
+
+    if (validDates.length === 0) {
       toast({
         title: "שגיאה",
-        description: "אנא הוסף לפחות תאריך אחד",
+        description: "אנא מלא לפחות תאריך אחד",
         variant: "destructive",
       });
       return;
     }
 
     try {
-      const dateStrings = multipleLessonDates.map(date => format(date, "yyyy-MM-dd"));
-      await createMultipleLessons({
+      const dateStrings = validDates.map(date => format(date, "yyyy-MM-dd"));
+      const result = await createMultipleLessons({
         cohortId: localCohortId,
         lessonDates: dateStrings,
       }).unwrap();
 
+      const { created, skipped, errors } = result;
+
+      let message = `נוצרו ${created.length} שיעורים בהצלחה`;
+      if (skipped.length > 0) {
+        message += `. ${skipped.length} תאריכים דילגו (כבר קיימים או כפולים)`;
+      }
+      if (errors.length > 0) {
+        message += `. ${errors.length} שגיאות התרחשו`;
+      }
+
       toast({
-        title: "הצלחה",
-        description: `נוצרו ${multipleLessonDates.length} שיעורים בהצלחה`,
+        title: created.length > 0 ? "הצלחה" : "הושלם עם אזהרות",
+        description: message,
+        variant: created.length === 0 ? "destructive" : "default",
       });
 
-      setMultipleLessonDates([]);
-      setNewDateToAdd(new Date());
-      setMultipleLessonsModalOpen(false);
+      if (created.length > 0) {
+        setMultipleLessonDates([]);
+        setMultipleLessonsModalOpen(false);
+      }
     } catch (error: any) {
       toast({
         title: "שגיאה",
@@ -1336,15 +1346,13 @@ const Attendance = () => {
         open={multipleLessonsModalOpen}
         onOpenChange={setMultipleLessonsModalOpen}
         dates={multipleLessonDates}
-        newDate={newDateToAdd}
-        onNewDateChange={setNewDateToAdd}
-        onAddDate={handleAddDateToMultiple}
+        onAddRow={handleAddRow}
         onRemoveDate={handleRemoveDateFromMultiple}
+        onUpdateDate={handleUpdateDateInMultiple}
         onSave={handleCreateMultipleLessons}
         onCancel={() => {
           setMultipleLessonsModalOpen(false);
           setMultipleLessonDates([]);
-          setNewDateToAdd(new Date());
         }}
         isCreating={creatingMultipleLessons}
       />

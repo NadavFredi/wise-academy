@@ -150,21 +150,103 @@ export const attendanceApi = createApi({
       },
       invalidatesTags: ['Lessons'],
     }),
-    createMultipleLessons: builder.mutation<Lesson[], { cohortId: string; lessonDates: string[] }>({
+    createMultipleLessons: builder.mutation<
+      { created: Lesson[]; skipped: string[]; errors: Array<{ date: string; error: string }> },
+      { cohortId: string; lessonDates: string[] }
+    >({
       queryFn: async ({ cohortId, lessonDates }) => {
         if (lessonDates.length === 0) {
-          return { data: [] };
+          return { data: { created: [], skipped: [], errors: [] } };
         }
-        const insertData = lessonDates.map(lessonDate => ({
-          cohort_id: cohortId,
-          lesson_date: lessonDate,
-        }));
-        const { data, error } = await supabase
+
+        const created: Lesson[] = [];
+        const skipped: string[] = [];
+        const errors: Array<{ date: string; error: string }> = [];
+
+        // Check for duplicates in the input
+        const uniqueDates = Array.from(new Set(lessonDates));
+        const duplicates = lessonDates.filter((date, index) => lessonDates.indexOf(date) !== index);
+        skipped.push(...duplicates);
+
+        // Check which dates already exist in the database
+        const { data: existingLessons, error: checkError } = await supabase
           .from('lessons')
-          .insert(insertData)
-          .select();
-        if (error) throw error;
-        return { data: data || [] };
+          .select('lesson_date')
+          .eq('cohort_id', cohortId)
+          .in('lesson_date', uniqueDates);
+
+        if (checkError) {
+          // If check fails, try to insert all and handle errors
+          for (const lessonDate of uniqueDates) {
+            try {
+              const { data, error } = await supabase
+                .from('lessons')
+                .insert({ cohort_id: cohortId, lesson_date: lessonDate })
+                .select()
+                .single();
+              
+              if (error) {
+                // Check if it's a duplicate error
+                if (error.code === '23505' || error.message.includes('duplicate') || error.message.includes('unique')) {
+                  skipped.push(lessonDate);
+                } else {
+                  errors.push({ date: lessonDate, error: error.message });
+                }
+              } else if (data) {
+                created.push(data);
+              }
+            } catch (err: any) {
+              errors.push({ date: lessonDate, error: err.message || 'Unknown error' });
+            }
+          }
+        } else {
+          // We have existing lessons, filter them out
+          const existingDates = new Set(existingLessons?.map(l => l.lesson_date) || []);
+          const datesToInsert = uniqueDates.filter(date => !existingDates.has(date));
+          skipped.push(...uniqueDates.filter(date => existingDates.has(date)));
+
+          // Insert remaining dates
+          if (datesToInsert.length > 0) {
+            const insertData = datesToInsert.map(lessonDate => ({
+              cohort_id: cohortId,
+              lesson_date: lessonDate,
+            }));
+
+            const { data, error } = await supabase
+              .from('lessons')
+              .insert(insertData)
+              .select();
+
+            if (error) {
+              // If bulk insert fails, try individual inserts
+              for (const lessonDate of datesToInsert) {
+                try {
+                  const { data: singleData, error: singleError } = await supabase
+                    .from('lessons')
+                    .insert({ cohort_id: cohortId, lesson_date: lessonDate })
+                    .select()
+                    .single();
+                  
+                  if (singleError) {
+                    if (singleError.code === '23505' || singleError.message.includes('duplicate') || singleError.message.includes('unique')) {
+                      skipped.push(lessonDate);
+                    } else {
+                      errors.push({ date: lessonDate, error: singleError.message });
+                    }
+                  } else if (singleData) {
+                    created.push(singleData);
+                  }
+                } catch (err: any) {
+                  errors.push({ date: lessonDate, error: err.message || 'Unknown error' });
+                }
+              }
+            } else {
+              created.push(...(data || []));
+            }
+          }
+        }
+
+        return { data: { created, skipped, errors } };
       },
       invalidatesTags: ['Lessons'],
     }),

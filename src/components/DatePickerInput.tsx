@@ -252,14 +252,17 @@ export const DatePickerInput = forwardRef<HTMLInputElement, DatePickerInputProps
 
         onChange(date)
         setInputValue(format(date, displayFormat))
-        setOpen(false)
-        setCalendarView("day")
-        setCalendarViewMonth(null) // Reset calendar view month when date is selected
-        setIsTypingMode(false)
-        lastPointerDownInsideRef.current = false
-        suppressNextFocusRef.current = true
+        // Delay closing the calendar slightly to prevent click event from bubbling to dialog
         requestAnimationFrame(() => {
-          inputRef.current?.focus()
+          setOpen(false)
+          setCalendarView("day")
+          setCalendarViewMonth(null) // Reset calendar view month when date is selected
+          setIsTypingMode(false)
+          lastPointerDownInsideRef.current = false
+          suppressNextFocusRef.current = true
+          requestAnimationFrame(() => {
+            inputRef.current?.focus()
+          })
         })
       },
       [displayFormat, onChange, minDate, maxDate],
@@ -523,6 +526,14 @@ export const DatePickerInput = forwardRef<HTMLInputElement, DatePickerInputProps
                 !usePortal && "absolute right-0 mt-2"
               )}
               style={usePortal ? portalStyles : undefined}
+              onPointerDown={(e) => {
+                // Prevent clicks inside calendar from closing parent dialogs
+                e.stopPropagation()
+              }}
+              onClick={(e) => {
+                // Prevent clicks inside calendar from closing parent dialogs
+                e.stopPropagation()
+              }}
             >
               {calendarView === "day" && (
                 <div>
