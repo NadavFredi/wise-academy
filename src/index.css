@@ -71,10 +71,14 @@
 
   body {
     @apply bg-background text-foreground font-sans antialiased;
+    margin: 0;
+    padding: 0;
   }
 
   html {
     scroll-behavior: smooth;
+    margin: 0;
+    padding: 0;
   }
 }
 
