@@ -21,10 +21,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, LogOut } from "lucide-react";
+import { Plus, LogOut, StickyNote, MessageSquare } from "lucide-react";
 import { format } from "date-fns";
 import { he } from "date-fns/locale/he";
+import { cn } from "@/lib/utils";
 import Footer from "@/components/Footer";
 import { DatePickerInput } from "@/components/DatePickerInput";
 import { AutocompleteFilter } from "@/components/AutocompleteFilter";
@@ -37,8 +39,17 @@ const Attendance = () => {
   const { isAuthenticated } = useAppSelector((state) => state.auth);
   const { selectedCohortId, selectedDates } = useAppSelector((state) => state.attendance);
   
-  const [newLessonDate, setNewLessonDate] = useState<Date | null>(null);
+  const [newLessonDate, setNewLessonDate] = useState<Date | null>(new Date());
   const [dateFilterValue, setDateFilterValue] = useState("");
+  const [noteModalOpen, setNoteModalOpen] = useState(false);
+  const [currentNoteData, setCurrentNoteData] = useState<{
+    lessonId: string;
+    studentId: string;
+    studentName: string;
+    lessonDate: string;
+    note: string;
+  } | null>(null);
+  const [noteInput, setNoteInput] = useState("");
 
   // RTK Query hooks
   const { data: students = [], isLoading: studentsLoading } = useGetStudentsQuery(
@@ -153,22 +164,52 @@ const Attendance = () => {
     }
   };
 
-  const handleNoteChange = async (
+  const handleOpenNoteModal = (
     lessonId: string,
     studentId: string,
-    note: string
+    studentName: string,
+    lessonDate: string
   ) => {
+    const key = `${lessonId}-${studentId}`;
+    const current = attendanceMap[key];
+    setCurrentNoteData({
+      lessonId,
+      studentId,
+      studentName,
+      lessonDate,
+      note: current?.note || "",
+    });
+    setNoteInput(current?.note || "");
+    setNoteModalOpen(true);
+  };
+
+  const handleSaveNote = async () => {
+    if (!currentNoteData) return;
+
     try {
-      const key = `${lessonId}-${studentId}`;
+      const key = `${currentNoteData.lessonId}-${currentNoteData.studentId}`;
       const current = attendanceMap[key];
       await updateAttendance({
-        lessonId,
-        studentId,
+        lessonId: currentNoteData.lessonId,
+        studentId: currentNoteData.studentId,
         attended: current?.attended || false,
-        note,
+        note: noteInput,
       }).unwrap();
+
+      toast({
+        title: "הצלחה",
+        description: "ההערה נשמרה בהצלחה",
+      });
+
+      setNoteModalOpen(false);
+      setCurrentNoteData(null);
+      setNoteInput("");
     } catch (error) {
-      console.error("Error updating note:", error);
+      toast({
+        title: "שגיאה",
+        description: "אירעה שגיאה בשמירת ההערה",
+        variant: "destructive",
+      });
     }
   };
 
@@ -351,38 +392,46 @@ const Attendance = () => {
                             const record = attendanceMap[key];
                             const attended = record?.attended || false;
                             const note = record?.note || "";
+                            const hasNote = note && note.trim().length > 0;
 
                             return (
-                              <td key={lesson.id} className="p-3 align-top">
-                                <div className="flex flex-col gap-3 items-center min-w-[150px]">
-                                  <div className="flex items-center gap-2">
-                                    <Checkbox
-                                      checked={attended}
-                                      onCheckedChange={(checked) =>
-                                        handleAttendanceChange(
-                                          lesson.id,
-                                          student.id,
-                                          checked === true
-                                        )
-                                      }
-                                      className="h-5 w-5"
-                                    />
-                                    <span className="text-xs text-muted-foreground">
-                                      {attended ? "הגיע" : "לא הגיע"}
-                                    </span>
-                                  </div>
-                                  <Textarea
-                                    placeholder="הערה..."
-                                    value={note}
-                                    onChange={(e) =>
-                                      handleNoteChange(
+                              <td key={lesson.id} className="p-3">
+                                <div className="flex items-center justify-center gap-2">
+                                  <Checkbox
+                                    checked={attended}
+                                    onCheckedChange={(checked) =>
+                                      handleAttendanceChange(
                                         lesson.id,
                                         student.id,
-                                        e.target.value
+                                        checked === true
                                       )
                                     }
-                                    className="w-full min-h-[60px] text-sm resize-none"
+                                    className="h-5 w-5"
                                   />
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleOpenNoteModal(
+                                        lesson.id,
+                                        student.id,
+                                        student.name,
+                                        lesson.lesson_date
+                                      )
+                                    }
+                                    className={cn(
+                                      "p-1.5 rounded-md transition-colors",
+                                      hasNote
+                                        ? "text-primary hover:bg-primary/10"
+                                        : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                                    )}
+                                    title={hasNote ? "ערוך הערה" : "הוסף הערה"}
+                                  >
+                                    {hasNote ? (
+                                      <MessageSquare className="h-4 w-4 fill-primary text-primary" />
+                                    ) : (
+                                      <StickyNote className="h-4 w-4" />
+                                    )}
+                                  </button>
                                 </div>
                               </td>
                             );
@@ -398,6 +447,35 @@ const Attendance = () => {
         </div>
       </div>
       <Footer />
+
+      {/* Note Modal */}
+      <Dialog open={noteModalOpen} onOpenChange={setNoteModalOpen}>
+        <DialogContent className="sm:max-w-[500px]" dir="rtl">
+          <DialogHeader>
+            <DialogTitle>הערה עבור {currentNoteData?.studentName}</DialogTitle>
+            <DialogDescription>
+              תאריך השיעור: {currentNoteData && format(new Date(currentNoteData.lessonDate), "dd/MM/yyyy", { locale: he })}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Textarea
+              placeholder="הוסף הערה..."
+              value={noteInput}
+              onChange={(e) => setNoteInput(e.target.value)}
+              className="min-h-[120px] resize-none"
+              dir="rtl"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setNoteModalOpen(false)}>
+              ביטול
+            </Button>
+            <Button onClick={handleSaveNote}>
+              שמור
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

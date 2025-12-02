@@ -448,14 +448,50 @@ export const DatePickerInput = forwardRef<HTMLInputElement, DatePickerInputProps
               {calendarView === "day" && (
                 <div>
                   <div className="sticky top-0 bg-white border-b border-gray-200 px-3 py-2 flex items-center justify-between gap-2 z-10">
-                    <button
-                      type="button"
-                      className="text-sm font-semibold text-gray-700 hover:text-gray-900 cursor-pointer hover:bg-gray-50 px-2 py-1 rounded"
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={() => setCalendarView("month")}
-                    >
-                      {format(calendarMonth, "MMMM yyyy", { locale: he })}
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        className="text-gray-600 hover:text-gray-900 cursor-pointer hover:bg-gray-50 px-2 py-1 rounded"
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => {
+                          const newMonth = new Date(calendarMonth)
+                          newMonth.setMonth(newMonth.getMonth() - 1)
+                          setCalendarView("day")
+                          // Update calendar month for navigation
+                          const newDate = value ? new Date(value) : newMonth
+                          newDate.setMonth(newMonth.getMonth())
+                          onChange(newDate)
+                        }}
+                        aria-label="חודש קודם"
+                      >
+                        ←
+                      </button>
+                      <button
+                        type="button"
+                        className="text-sm font-semibold text-gray-700 hover:text-gray-900 cursor-pointer hover:bg-gray-50 px-2 py-1 rounded"
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => setCalendarView("month")}
+                      >
+                        {format(calendarMonth, "MMMM yyyy", { locale: he })}
+                      </button>
+                      <button
+                        type="button"
+                        className="text-gray-600 hover:text-gray-900 cursor-pointer hover:bg-gray-50 px-2 py-1 rounded"
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => {
+                          const newMonth = new Date(calendarMonth)
+                          newMonth.setMonth(newMonth.getMonth() + 1)
+                          setCalendarView("day")
+                          // Update calendar month for navigation
+                          const newDate = value ? new Date(value) : newMonth
+                          newDate.setMonth(newMonth.getMonth())
+                          onChange(newDate)
+                        }}
+                        aria-label="חודש הבא"
+                      >
+                        →
+                      </button>
+                    </div>
                     <button
                       type="button"
                       className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-md text-xs font-semibold shadow-sm transition-all duration-200 hover:shadow-md"
@@ -475,6 +511,7 @@ export const DatePickerInput = forwardRef<HTMLInputElement, DatePickerInputProps
                     selected={value ?? undefined}
                     onSelect={handleSelectDate}
                     defaultMonth={calendarMonth}
+                    locale={he}
                     initialFocus
                     classNames={{
                       caption: "hidden",
