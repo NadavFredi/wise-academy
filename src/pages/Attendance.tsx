@@ -29,7 +29,6 @@ import { he } from "date-fns/locale/he";
 import { cn } from "@/lib/utils";
 import Footer from "@/components/Footer";
 import { DatePickerInput } from "@/components/DatePickerInput";
-import { AutocompleteFilter } from "@/components/AutocompleteFilter";
 
 const Attendance = () => {
   const navigate = useNavigate();
@@ -40,7 +39,8 @@ const Attendance = () => {
   const { selectedCohortId, selectedDates } = useAppSelector((state) => state.attendance);
   
   const [newLessonDate, setNewLessonDate] = useState<Date | null>(new Date());
-  const [dateFilterValue, setDateFilterValue] = useState("");
+  const [startDate, setStartDate] = useState<Date | null>(null);
+  const [endDate, setEndDate] = useState<Date | null>(null);
   const [noteModalOpen, setNoteModalOpen] = useState(false);
   const [currentNoteData, setCurrentNoteData] = useState<{
     lessonId: string;
@@ -91,26 +91,41 @@ const Attendance = () => {
     return map;
   }, [attendanceRecords]);
 
-  // Filter lessons by selected dates
+  // Filter lessons by date range and sort from earliest to latest
   const filteredLessons = useMemo(() => {
-    if (selectedDates.length === 0) return lessons;
-    return lessons.filter((lesson) => selectedDates.includes(lesson.lesson_date));
-  }, [lessons, selectedDates]);
-
-  // Date filter search function
-  const dateSearchFn = async (searchTerm: string): Promise<string[]> => {
-    if (!searchTerm) {
-      return lessons.map((l) => format(new Date(l.lesson_date), "dd/MM/yyyy", { locale: he }));
+    let filtered = lessons;
+    
+    if (startDate || endDate) {
+      filtered = lessons.filter((lesson) => {
+        const lessonDate = new Date(lesson.lesson_date);
+        lessonDate.setHours(0, 0, 0, 0);
+        
+        if (startDate && endDate) {
+          const start = new Date(startDate);
+          start.setHours(0, 0, 0, 0);
+          const end = new Date(endDate);
+          end.setHours(23, 59, 59, 999);
+          return lessonDate >= start && lessonDate <= end;
+        } else if (startDate) {
+          const start = new Date(startDate);
+          start.setHours(0, 0, 0, 0);
+          return lessonDate >= start;
+        } else if (endDate) {
+          const end = new Date(endDate);
+          end.setHours(23, 59, 59, 999);
+          return lessonDate <= end;
+        }
+        return true;
+      });
     }
-    const searchLower = searchTerm.toLowerCase();
-    return lessons
-      .map((l) => ({
-        date: l.lesson_date,
-        formatted: format(new Date(l.lesson_date), "dd/MM/yyyy", { locale: he }),
-      }))
-      .filter((item) => item.formatted.includes(searchLower))
-      .map((item) => item.formatted);
-  };
+    
+    // Sort from earliest to latest
+    return [...filtered].sort((a, b) => {
+      const dateA = new Date(a.lesson_date).getTime();
+      const dateB = new Date(b.lesson_date).getTime();
+      return dateA - dateB;
+    });
+  }, [lessons, startDate, endDate]);
 
   const handleCreateLesson = async () => {
     if (!newLessonDate || !selectedCohortId) {
@@ -218,16 +233,9 @@ const Attendance = () => {
     navigate("/login");
   };
 
-  const handleDateSelect = (formattedDate: string) => {
-    // Find the lesson date that matches the formatted date
-    const lesson = lessons.find((l) => {
-      const formatted = format(new Date(l.lesson_date), "dd/MM/yyyy", { locale: he });
-      return formatted === formattedDate;
-    });
-    if (lesson) {
-      dispatch(toggleDate(lesson.lesson_date));
-      setDateFilterValue("");
-    }
+  const handleClearDateRange = () => {
+    setStartDate(null);
+    setEndDate(null);
   };
 
   const loading = studentsLoading || lessonsLoading || attendanceLoading;
@@ -298,64 +306,44 @@ const Attendance = () => {
               </CardContent>
             </Card>
 
-            {/* Date Filter with Autocomplete */}
-            {lessons.length > 0 ? (
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base">סינון תאריכים</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    <AutocompleteFilter
-                      value={dateFilterValue}
-                      onChange={setDateFilterValue}
-                      onSelect={handleDateSelect}
-                      placeholder="חפש תאריך..."
-                      searchFn={dateSearchFn}
-                      minSearchLength={0}
-                      autoSearchOnFocus={true}
-                      initialLoadOnMount={true}
-                      initialResultsLimit={10}
-                    />
-                    <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
-                      {lessons.map((lesson) => {
-                        const isSelected = selectedDates.includes(lesson.lesson_date);
-                        return (
-                          <Button
-                            key={lesson.id}
-                            variant={isSelected ? "default" : "outline"}
-                            size="sm"
-                            onClick={() => dispatch(toggleDate(lesson.lesson_date))}
-                            className="text-xs px-2 py-1 h-7"
-                          >
-                            {format(new Date(lesson.lesson_date), "dd/MM/yyyy", { locale: he })}
-                          </Button>
-                        );
-                      })}
-                      {selectedDates.length > 0 && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => dispatch(clearSelectedDates())}
-                          className="text-xs px-2 py-1 h-7"
-                        >
-                          נקה
-                        </Button>
-                      )}
+            {/* Date Range Filter */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">סינון תאריכים</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label htmlFor="start-date" className="text-sm">מתאריך</Label>
+                      <DatePickerInput
+                        value={startDate}
+                        onChange={setStartDate}
+                        wrapperClassName="mt-1"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="end-date" className="text-sm">עד תאריך</Label>
+                      <DatePickerInput
+                        value={endDate}
+                        onChange={setEndDate}
+                        wrapperClassName="mt-1"
+                      />
                     </div>
                   </div>
-                </CardContent>
-              </Card>
-            ) : (
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base">סינון תאריכים</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-muted-foreground">אין שיעורים זמינים</p>
-                </CardContent>
-              </Card>
-            )}
+                  {(startDate || endDate) && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleClearDateRange}
+                      className="w-full text-xs"
+                    >
+                      נקה סינון
+                    </Button>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
           </div>
 
           {/* Attendance Table */}
