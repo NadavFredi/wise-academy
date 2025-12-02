@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { DatePickerInput } from "@/components/DatePickerInput";
@@ -29,16 +30,29 @@ export const MultipleLessonsDialog = ({
 }: MultipleLessonsDialogProps) => {
   const allDatesFilled = dates.length > 0 && dates.every(date => date !== null);
 
+  // Sort dates: null dates first, then sorted by date, while preserving original indices
+  const sortedDatesWithIndices = useMemo(() => {
+    const datesWithIndices = dates.map((date, index) => ({ date, originalIndex: index }));
+    return datesWithIndices.sort((a, b) => {
+      // Null dates go to the top
+      if (a.date === null && b.date === null) return 0;
+      if (a.date === null) return -1;
+      if (b.date === null) return 1;
+      // Sort by date ascending
+      return a.date.getTime() - b.date.getTime();
+    });
+  }, [dates]);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[600px]" dir="rtl">
+      <DialogContent className="sm:max-w-[600px] max-h-[90vh] flex flex-col" dir="rtl">
         <DialogHeader>
           <DialogTitle>צור שיעורים מרובים</DialogTitle>
           <DialogDescription>
             לחץ על + כדי להוסיף שורה חדשה. מלא את כל התאריכים לפני השמירה.
           </DialogDescription>
         </DialogHeader>
-        <div className="py-4 space-y-4">
+        <div className="py-4 space-y-4 overflow-y-auto flex-1 min-h-0">
           <div className="flex justify-end">
             <Button
               onClick={onAddRow}
@@ -51,8 +65,9 @@ export const MultipleLessonsDialog = ({
           </div>
 
           {dates.length > 0 ? (
-            <div className="border rounded-md overflow-hidden">
-              <Table>
+            <div className="border rounded-md overflow-visible">
+              <div className="overflow-x-auto">
+                <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-12">#</TableHead>
@@ -61,21 +76,22 @@ export const MultipleLessonsDialog = ({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {dates.map((date, index) => (
-                    <TableRow key={index}>
-                      <TableCell className="font-medium">{index + 1}</TableCell>
-                      <TableCell>
+                  {sortedDatesWithIndices.map(({ date, originalIndex }, displayIndex) => (
+                    <TableRow key={originalIndex}>
+                      <TableCell className="font-medium">{displayIndex + 1}</TableCell>
+                      <TableCell className="relative">
                         <DatePickerInput
                           value={date}
-                          onChange={(newDate) => onUpdateDate(index, newDate)}
+                          onChange={(newDate) => onUpdateDate(originalIndex, newDate)}
                           wrapperClassName="w-full"
+                          usePortal={false}
                         />
                       </TableCell>
                       <TableCell>
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => onRemoveDate(index)}
+                          onClick={() => onRemoveDate(originalIndex)}
                           className="h-8 w-8 p-0 text-destructive hover:text-destructive"
                         >
                           <X className="h-4 w-4" />
@@ -85,6 +101,7 @@ export const MultipleLessonsDialog = ({
                   ))}
                 </TableBody>
               </Table>
+              </div>
             </div>
           ) : (
             <div className="text-center py-8 text-muted-foreground">

@@ -105,6 +105,7 @@ export const DatePickerInput = forwardRef<HTMLInputElement, DatePickerInputProps
     const suppressNextFocusRef = useRef(false)
     const isTypingRef = useRef(false)
     const lastPointerDownInsideRef = useRef(false)
+    const isSelectingDateRef = useRef(false)
     const [open, setOpen] = useState(autoOpen)
     const [inputValue, setInputValue] = useState(() => (value ? format(value, displayFormat) : ""))
     const [calendarView, setCalendarView] = useState<CalendarView>("day")
@@ -128,6 +129,10 @@ export const DatePickerInput = forwardRef<HTMLInputElement, DatePickerInputProps
     useEffect(() => {
       const handleClickOutside = (event: MouseEvent) => {
         if (!open) return
+        // Don't close if we're in the middle of selecting a date
+        if (isSelectingDateRef.current) {
+          return
+        }
         const target = event.target as Node
         if (
           containerRef.current &&
@@ -149,6 +154,10 @@ export const DatePickerInput = forwardRef<HTMLInputElement, DatePickerInputProps
           (containerRef.current && containerRef.current.contains(target)) ||
           (calendarContainerRef.current && calendarContainerRef.current.contains(target))
         lastPointerDownInsideRef.current = inside
+        // If clicking inside calendar, prevent dialog from closing
+        if (inside && calendarContainerRef.current?.contains(target)) {
+          event.stopPropagation()
+        }
       }
 
       document.addEventListener("mousedown", handleClickOutside)
@@ -250,18 +259,27 @@ export const DatePickerInput = forwardRef<HTMLInputElement, DatePickerInputProps
           }
         }
 
+        // Set flag immediately to prevent dialog from closing
+        isSelectingDateRef.current = true
+
         onChange(date)
         setInputValue(format(date, displayFormat))
-        // Delay closing the calendar slightly to prevent click event from bubbling to dialog
+
+        // Close calendar after a delay to allow click event to complete
+        // Use multiple requestAnimationFrame calls to ensure event is fully processed
         requestAnimationFrame(() => {
-          setOpen(false)
-          setCalendarView("day")
-          setCalendarViewMonth(null) // Reset calendar view month when date is selected
-          setIsTypingMode(false)
-          lastPointerDownInsideRef.current = false
-          suppressNextFocusRef.current = true
           requestAnimationFrame(() => {
+            setOpen(false)
+            setCalendarView("day")
+            setCalendarViewMonth(null)
+            setIsTypingMode(false)
+            lastPointerDownInsideRef.current = false
+            suppressNextFocusRef.current = true
             inputRef.current?.focus()
+            // Reset flag after a delay
+            setTimeout(() => {
+              isSelectingDateRef.current = false
+            }, 300)
           })
         })
       },
@@ -521,6 +539,7 @@ export const DatePickerInput = forwardRef<HTMLInputElement, DatePickerInputProps
           const calendarNode = (
             <div
               ref={calendarContainerRef}
+              data-calendar-container
               className={cn(
                 "z-[100] w-[18rem] rounded-md border border-gray-200 bg-white shadow-lg",
                 !usePortal && "absolute right-0 mt-2"
@@ -529,8 +548,13 @@ export const DatePickerInput = forwardRef<HTMLInputElement, DatePickerInputProps
               onPointerDown={(e) => {
                 // Prevent clicks inside calendar from closing parent dialogs
                 e.stopPropagation()
+                isSelectingDateRef.current = true
               }}
               onClick={(e) => {
+                // Prevent clicks inside calendar from closing parent dialogs
+                e.stopPropagation()
+              }}
+              onMouseDown={(e) => {
                 // Prevent clicks inside calendar from closing parent dialogs
                 e.stopPropagation()
               }}
@@ -594,23 +618,29 @@ export const DatePickerInput = forwardRef<HTMLInputElement, DatePickerInputProps
                       היום
                     </button>
                   </div>
-                  <Calendar
-                    key={calendarMonth.toISOString()}
-                    mode="single"
-                    selected={value ?? undefined}
-                    onSelect={handleSelectDate}
-                    defaultMonth={calendarMonth}
-                    locale={he}
-                    initialFocus
-                    fromDate={minDate}
-                    toDate={maxDate}
-                    classNames={{
-                      caption: "hidden",
-                    }}
-                    components={{
-                      Caption: () => null,
-                    }}
-                  />
+                  <div
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => e.stopPropagation()}
+                    onMouseDown={(e) => e.stopPropagation()}
+                  >
+                    <Calendar
+                      key={calendarMonth.toISOString()}
+                      mode="single"
+                      selected={value ?? undefined}
+                      onSelect={handleSelectDate}
+                      defaultMonth={calendarMonth}
+                      locale={he}
+                      initialFocus
+                      fromDate={minDate}
+                      toDate={maxDate}
+                      classNames={{
+                        caption: "hidden",
+                      }}
+                      components={{
+                        Caption: () => null,
+                      }}
+                    />
+                  </div>
                 </div>
               )}
 
