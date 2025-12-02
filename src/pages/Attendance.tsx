@@ -59,6 +59,7 @@ const Attendance = () => {
     lessonId: string;
   } | null>(null);
   const [chartModalFilter, setChartModalFilter] = useState<'all' | 'attended' | 'absent'>('all');
+  const [selectedStudentGraph, setSelectedStudentGraph] = useState<'attendance' | 'absence' | 'percentage' | null>(null);
   const [noteModalOpen, setNoteModalOpen] = useState(false);
   const [currentNoteData, setCurrentNoteData] = useState<{
     lessonId: string;
@@ -188,6 +189,44 @@ const Attendance = () => {
       }
     });
   }, [filteredStudents, sortState, filteredLessons, attendanceMap]);
+
+  // Prepare student graphs data
+  const studentGraphsData = useMemo(() => {
+    const studentsToCount = selectedStudentIds.length > 0
+      ? filteredStudents
+      : students;
+
+    const data = studentsToCount.map((student) => {
+      let totalAttended = 0;
+      let totalAbsent = 0;
+
+      filteredLessons.forEach((lesson) => {
+        const attendanceRecord = attendanceRecords.find(
+          (r) => r.lesson_id === lesson.id && r.student_id === student.id
+        );
+
+        if (attendanceRecord && attendanceRecord.attended) {
+          totalAttended++;
+        } else {
+          totalAbsent++;
+        }
+      });
+
+      const total = totalAttended + totalAbsent;
+      const percentage = total > 0 ? Math.round((totalAttended / total) * 100) : 0;
+
+      return {
+        studentId: student.id,
+        studentName: student.name,
+        totalAttended,
+        totalAbsent,
+        percentage,
+      };
+    });
+
+    // Sort by total attendance (descending)
+    return data.sort((a, b) => b.totalAttended - a.totalAttended);
+  }, [filteredLessons, attendanceRecords, selectedStudentIds, filteredStudents, students]);
 
   // Prepare chart data
   const chartData = useMemo(() => {
@@ -607,9 +646,10 @@ const Attendance = () => {
 
           {/* Tabs */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="mb-4">
+            <TabsList className="mb-4" dir="rtl">
               <TabsTrigger value="data">נתונים</TabsTrigger>
-              <TabsTrigger value="graphs">גרפים</TabsTrigger>
+              <TabsTrigger value="graphs">גרפי כיתה</TabsTrigger>
+              <TabsTrigger value="student-graphs">גרפי תלמידים</TabsTrigger>
             </TabsList>
 
             <TabsContent value="data">
@@ -894,6 +934,182 @@ const Attendance = () => {
                     </div>
                   </CardContent>
                 </Card>
+              )}
+            </TabsContent>
+
+            <TabsContent value="student-graphs">
+              {loading ? (
+                <div className="text-center py-12">טוען...</div>
+              ) : filteredLessons.length === 0 ? (
+                <Card>
+                  <CardContent className="py-12 text-center text-muted-foreground">
+                    אין שיעורים להצגה. צור שיעור חדש כדי להתחיל.
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="space-y-6">
+                  {/* Combined Attendance and Absence Graph */}
+                  <Card>
+                    <CardHeader className="text-right">
+                      <CardTitle>נוכחויות והיעדרויות</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div dir="rtl">
+                        <HighchartsReact
+                          highcharts={Highcharts}
+                          options={{
+                            chart: {
+                              type: "bar",
+                            },
+                            title: {
+                              text: "נוכחויות והיעדרויות לכל תלמיד",
+                            },
+                            xAxis: {
+                              categories: studentGraphsData.map((d) => d.studentName),
+                              title: {
+                                text: "תלמיד",
+                              },
+                            },
+                            yAxis: {
+                              title: {
+                                text: "מספר שיעורים",
+                              },
+                            },
+                            series: [
+                              {
+                                name: "נוכחויות",
+                                data: studentGraphsData.map((d) => d.totalAttended),
+                                color: "#22c55e",
+                              },
+                              {
+                                name: "היעדרויות",
+                                data: studentGraphsData.map((d) => d.totalAbsent),
+                                color: "#ef4444",
+                              },
+                            ],
+                            legend: {
+                              align: "right",
+                              verticalAlign: "top",
+                            },
+                            plotOptions: {
+                              bar: {
+                                dataLabels: {
+                                  enabled: true,
+                                },
+                                enableMouseTracking: true,
+                                point: {
+                                  events: {
+                                    click: function (this: any) {
+                                      const studentIndex = this.x;
+                                      const studentData = studentGraphsData[studentIndex];
+                                      if (studentData) {
+                                        if (this.series.name === "נוכחויות") {
+                                          setSelectedStudentGraph('attendance');
+                                        } else {
+                                          setSelectedStudentGraph('absence');
+                                        }
+                                      }
+                                    },
+                                  },
+                                },
+                              },
+                            },
+                            tooltip: {
+                              shared: true,
+                              useHTML: true,
+                              formatter: function (this: any) {
+                                const studentIndex = this.x;
+                                const studentData = studentGraphsData[studentIndex];
+                                if (!studentData) return "";
+
+                                let tooltip = `<div dir="rtl"><b>${studentData.studentName}</b><br/>`;
+                                this.points?.forEach((point: any) => {
+                                  tooltip += `${point.series.name}: <b>${point.y}</b><br/>`;
+                                });
+                                tooltip += `אחוז נוכחות: <b>${studentData.percentage}%</b></div>`;
+                                return tooltip;
+                              },
+                            },
+                          }}
+                        />
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Percentage of Presence Graph */}
+                  <Card>
+                    <CardHeader className="text-right">
+                      <CardTitle>אחוז נוכחות</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div dir="rtl">
+                        <HighchartsReact
+                          highcharts={Highcharts}
+                          options={{
+                            chart: {
+                              type: "bar",
+                            },
+                            title: {
+                              text: "אחוז נוכחות לכל תלמיד",
+                            },
+                            xAxis: {
+                              categories: studentGraphsData.map((d) => d.studentName),
+                              title: {
+                                text: "תלמיד",
+                              },
+                            },
+                            yAxis: {
+                              title: {
+                                text: "אחוז נוכחות (%)",
+                              },
+                              max: 100,
+                            },
+                            series: [
+                              {
+                                name: "אחוז נוכחות",
+                                data: studentGraphsData.map((d) => d.percentage),
+                                color: "#3b82f6",
+                              },
+                            ],
+                            legend: {
+                              align: "right",
+                              verticalAlign: "top",
+                            },
+                            plotOptions: {
+                              bar: {
+                                dataLabels: {
+                                  enabled: true,
+                                  format: "{y}%",
+                                },
+                                enableMouseTracking: true,
+                                point: {
+                                  events: {
+                                    click: function (this: any) {
+                                      const studentIndex = this.x;
+                                      const studentData = studentGraphsData[studentIndex];
+                                      if (studentData) {
+                                        setSelectedStudentGraph('percentage');
+                                      }
+                                    },
+                                  },
+                                },
+                              },
+                            },
+                            tooltip: {
+                              useHTML: true,
+                              formatter: function (this: any) {
+                                const studentIndex = this.x;
+                                const studentData = studentGraphsData[studentIndex];
+                                if (!studentData) return "";
+                                return `<div dir="rtl"><b>${studentData.studentName}</b><br/>אחוז נוכחות: <b>${studentData.percentage}%</b><br/>נוכחויות: ${studentData.totalAttended} | היעדרויות: ${studentData.totalAbsent}</div>`;
+                              },
+                            },
+                          }}
+                        />
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
               )}
             </TabsContent>
           </Tabs>
