@@ -16,6 +16,7 @@ import {
   useUpdateLessonMutation,
   useDeleteLessonMutation,
   useUpdateAttendanceMutation,
+  useSyncCohortMutation,
   type Lesson,
 } from "@/store/api/attendanceApi";
 import { useCohorts } from "@/store/api/cohortsApi";
@@ -103,6 +104,7 @@ const Attendance = () => {
   const [updateLesson] = useUpdateLessonMutation();
   const [deleteLesson] = useDeleteLessonMutation();
   const [updateAttendance] = useUpdateAttendanceMutation();
+  const [syncCohort] = useSyncCohortMutation();
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -111,7 +113,7 @@ const Attendance = () => {
     }
   }, [isAuthenticated, navigate]);
 
-  // Sync cohort filter value with selected cohort
+  // Sync cohort filter value with selected cohort and sync cohort to DB
   useEffect(() => {
     if (selectedCohortId && cohorts.length > 0) {
       const selectedCohort = cohorts.find((c) => c.customobject1004id === selectedCohortId);
@@ -120,11 +122,23 @@ const Attendance = () => {
           ? `${selectedCohort.name} - ${selectedCohort.pcfCoursename}`
           : selectedCohort.name;
         setCohortFilterValue(displayName);
+
+        // Sync cohort to database
+        const cohortName = selectedCohort.pcfCoursename
+          ? `${selectedCohort.name} - ${selectedCohort.pcfCoursename}`
+          : selectedCohort.name;
+
+        syncCohort({
+          fireberryId: selectedCohort.customobject1004id,
+          name: cohortName,
+        }).catch((error) => {
+          console.error('Error syncing cohort:', error);
+        });
       }
     } else if (!selectedCohortId) {
       setCohortFilterValue("");
     }
-  }, [selectedCohortId, cohorts]);
+  }, [selectedCohortId, cohorts, syncCohort]);
 
   // Create attendance map
   const attendanceMap = useMemo(() => {
@@ -333,9 +347,28 @@ const Attendance = () => {
       .map((c) => getCohortDisplayName(c));
   };
 
-  const handleCohortSelect = (cohortDisplayName: string) => {
+  const handleCohortSelect = async (cohortDisplayName: string) => {
     const cohort = cohorts.find((c) => getCohortDisplayName(c) === cohortDisplayName);
     if (cohort) {
+      // Sync cohort to database first
+      const cohortName = cohort.pcfCoursename
+        ? `${cohort.name} - ${cohort.pcfCoursename}`
+        : cohort.name;
+
+      try {
+        await syncCohort({
+          fireberryId: cohort.customobject1004id,
+          name: cohortName,
+        }).unwrap();
+      } catch (error) {
+        console.error('Error syncing cohort:', error);
+        toast({
+          title: "שגיאה",
+          description: "אירעה שגיאה בסנכרון המחזור",
+          variant: "destructive",
+        });
+      }
+
       dispatch(setSelectedCohort(cohort.customobject1004id));
       setCohortFilterValue(cohortDisplayName);
     }

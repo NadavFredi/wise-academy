@@ -9,8 +9,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { useToast } from "@/hooks/use-toast";
 import { Lock } from "lucide-react";
 import Footer from "@/components/Footer";
+import { supabase } from "@/lib/supabase";
 
 const Login = () => {
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
@@ -22,11 +24,23 @@ const Login = () => {
     setLoading(true);
 
     try {
-      // For now, we'll use a simple password check
-      // In production, this should be done via Supabase Auth
-      // For mock, we'll use a simple password
-      if (password === "admin") {
-        dispatch(setAuthenticated("authenticated"));
+      // Use Supabase Auth to authenticate the user
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (error) {
+        toast({
+          title: "שגיאה",
+          description: error.message || "אימייל או סיסמה שגויים",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (data?.session) {
+        dispatch(setAuthenticated(data.session.access_token));
         toast({
           title: "התחברות הצליחה",
           description: "ברוך הבא למערכת נוכחות",
@@ -35,11 +49,12 @@ const Login = () => {
       } else {
         toast({
           title: "שגיאה",
-          description: "סיסמה שגויה",
+          description: "אימייל או סיסמה שגויים",
           variant: "destructive",
         });
       }
     } catch (error) {
+      console.error("Login error:", error);
       toast({
         title: "שגיאה",
         description: "אירעה שגיאה בהתחברות",
@@ -61,10 +76,22 @@ const Login = () => {
               </div>
             </div>
             <CardTitle className="text-2xl">התחברות מנהל</CardTitle>
-            <CardDescription>הזן סיסמה כדי לגשת למערכת נוכחות</CardDescription>
+            <CardDescription>הזן אימייל וסיסמה כדי לגשת למערכת נוכחות</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleLogin} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="email">אימייל</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="הזן אימייל"
+                  required
+                  disabled={loading}
+                />
+              </div>
               <div className="space-y-2">
                 <Label htmlFor="password">סיסמה</Label>
                 <Input
@@ -81,9 +108,6 @@ const Login = () => {
                 {loading ? "מתחבר..." : "התחבר"}
               </Button>
             </form>
-            <p className="text-xs text-muted-foreground mt-4 text-center">
-              סיסמה לדוגמה: admin
-            </p>
           </CardContent>
         </Card>
       </div>

@@ -45,6 +45,7 @@ interface FireberryQueryRequest {
 // Get Supabase URL for edge functions
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'http://localhost:54321';
 const SUPABASE_FUNCTION_URL = `${supabaseUrl}/functions/v1/fireberry-proxy`;
+const SUPABASE_SYNC_FUNCTION_URL = `${supabaseUrl}/functions/v1/sync-fireberry`;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0';
 
 export interface Lesson {
@@ -66,14 +67,13 @@ export const attendanceApi = createApi({
   baseQuery: fetchBaseQuery({ baseUrl: '' }),
   tagTypes: ['Students', 'Lessons', 'Attendance'],
   endpoints: (builder) => ({
-    getStudents: builder.query<Student[], string>({
-      queryFn: async (cohortId) => {
-        if (!cohortId) {
-          return { data: [] };
-        }
-
+    syncCohort: builder.mutation<
+      { id: string; fireberry_id: string; name: string },
+      { fireberryId: string; name: string }
+    >({
+      queryFn: async ({ fireberryId, name }) => {
         try {
-          const response = await fetch(SUPABASE_FUNCTION_URL, {
+          const response = await fetch(SUPABASE_SYNC_FUNCTION_URL, {
             method: 'POST',
             headers: {
               'accept': 'application/json',
@@ -82,35 +82,65 @@ export const attendanceApi = createApi({
               'Authorization': `Bearer ${supabaseAnonKey}`,
             },
             body: JSON.stringify({
-              query: `(pcfCohort = ${cohortId})`,
-              fields: "pcfFullName,pcfLeadObjId",
-              page_size: 500,
-              objecttype: "1002",
-            } as FireberryQueryRequest),
+              action: 'syncCohort',
+              cohortId: fireberryId,
+              cohortName: name,
+            }),
           });
 
           if (!response.ok) {
-            throw new Error(`Fireberry API error: ${response.status} ${response.statusText}`);
+            throw new Error(`Sync function error: ${response.status} ${response.statusText}`);
           }
 
-          const fireberryResponse: FireberryQueryResponse = await response.json();
+          const result = await response.json();
 
-          if (!fireberryResponse.success || !fireberryResponse.data?.Data) {
-            return { data: [] };
+          if (!result.success) {
+            throw new Error(result.error || 'Failed to sync cohort');
           }
 
-          const students: Student[] = fireberryResponse.data.Data.map((item) => ({
-            id: item.pcfLeadObjId || '',
-            name: item.pcfFullName || '',
-            cohort_id: cohortId,
-          })).filter((student) => student.id && student.name);
-
-          // Sort by name
-          students.sort((a, b) => a.name.localeCompare(b.name, 'he'));
-
-          return { data: students };
+          return { data: result.data };
         } catch (error) {
-          console.error('Error fetching students from Fireberry:', error);
+          console.error('Error syncing cohort:', error);
+          return { error: error as Error };
+        }
+      },
+      invalidatesTags: ['Students'],
+    }),
+    getStudents: builder.query<Student[], string>({
+      queryFn: async (cohortId) => {
+        if (!cohortId) {
+          return { data: [] };
+        }
+
+        try {
+          // Call sync function to fetch and sync students
+          const response = await fetch(SUPABASE_SYNC_FUNCTION_URL, {
+            method: 'POST',
+            headers: {
+              'accept': 'application/json',
+              'content-type': 'application/json',
+              'apikey': supabaseAnonKey,
+              'Authorization': `Bearer ${supabaseAnonKey}`,
+            },
+            body: JSON.stringify({
+              action: 'syncStudents',
+              cohortId: cohortId,
+            }),
+          });
+
+          if (!response.ok) {
+            throw new Error(`Sync function error: ${response.status} ${response.statusText}`);
+          }
+
+          const result = await response.json();
+
+          if (!result.success) {
+            throw new Error(result.error || 'Failed to sync students');
+          }
+
+          return { data: result.data || [] };
+        } catch (error) {
+          console.error('Error fetching students:', error);
           return { error: error as Error };
         }
       },
@@ -223,5 +253,6 @@ export const {
   useUpdateLessonMutation,
   useDeleteLessonMutation,
   useUpdateAttendanceMutation,
+  useSyncCohortMutation,
 } = attendanceApi;
 

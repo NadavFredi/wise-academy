@@ -119,3 +119,8 @@ entrypoint = "./functions/get-attendance/index.ts"
 enabled = true
 verify_jwt = false
 entrypoint = "./functions/fireberry-proxy/index.ts"
+
+[functions.sync-fireberry]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/sync-fireberry/index.ts"
